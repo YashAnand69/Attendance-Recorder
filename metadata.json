@@ -1,0 +1,11 @@
+{
+  "name": "Smart Attendance System",
+  "description": "AI-powered facial recognition attendance tracker with Firestore sync, geolocation verification, parent notifications, and analytics dashboard.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

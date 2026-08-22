@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "students": {
+      "title": "Students",
+      "description": "Student profiles with registered facial data and parent contact info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "rollNumber": { "type": "string" },
+        "className": { "type": "string" },
+        "parentEmail": { "type": "string" },
+        "parentPhone": { "type": "string" },
+        "faceImageDataUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "rollNumber", "className", "faceImageDataUrl"]
+    },
+    "classrooms": {
+      "title": "Classrooms",
+      "description": "Classroom geofence boundary configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "radiusMeters": { "type": "number" },
+        "teacherName": { "type": "string" }
+      },
+      "required": ["id", "name", "latitude", "longitude", "radiusMeters"]
+    },
+    "attendance_logs": {
+      "title": "Attendance Logs",
+      "description": "Real-time facial verification attendance records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "rollNumber": { "type": "string" },
+        "className": { "type": "string" },
+        "date": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string" },
+        "confidence": { "type": "number" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "verificationMethod": { "type": "string" },
+        "syncedOffline": { "type": "boolean" },
+        "snapshotUrl": { "type": "string" }
+      },
+      "required": ["id", "studentId", "studentName", "date", "status", "timestamp"]
+    },
+    "parent_alerts": {
+      "title": "Parent Alerts",
+      "description": "Automated email notifications sent for absent students",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "parentEmail": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string" },
+        "sentAt": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["id", "studentId", "studentName", "parentEmail", "date", "status"]
+    }
+  }
+}
