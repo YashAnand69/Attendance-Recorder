@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Shield, Lock, KeyRound, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
+import { Lock, KeyRound, Eye, EyeOff, AlertCircle, ArrowRight, X } from "lucide-react";
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -27,37 +27,39 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       setPassword("");
       onSuccess();
     } else {
-      setError("Invalid Administrator Password. Access Denied.");
+      setError("Invalid administrator password. Access denied.");
       setShake(true);
       setTimeout(() => setShake(false), 500);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-xs">
       <div
-        className={`w-full max-w-md bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl text-slate-100 relative overflow-hidden transition-all ${
-          shake ? "animate-bounce" : ""
+        className={`w-full max-w-sm bg-white border border-zinc-200 rounded-2xl p-6 shadow-xl text-zinc-900 relative transition-transform ${
+          shake ? "translate-x-1" : ""
         }`}
       >
-        {/* Glow ambient decoration */}
-        <div className="absolute -top-20 -right-20 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 p-1 rounded-md transition-colors"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
 
-        <div className="relative z-10 space-y-6">
-          {/* Header Icon */}
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-600 to-cyan-500 p-0.5 shadow-xl shadow-indigo-500/25 flex items-center justify-center">
-              <div className="w-full h-full bg-slate-900 rounded-[14px] flex items-center justify-center">
-                <Lock className="w-8 h-8 text-indigo-400" />
-              </div>
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-900">
+              <Lock className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">
-                Admin Portal Access
+              <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+                Admin Authentication
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Enter master administrator security credentials to unlock management dashboards &amp; controls.
+              <p className="text-xs text-zinc-500">
+                Enter master credentials to unlock controls
               </p>
             </div>
           </div>
@@ -65,11 +67,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Admin Master Password
+              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+                Master Password
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
                   <KeyRound className="w-4 h-4" />
                 </div>
                 <input
@@ -79,42 +81,42 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                     setPassword(e.target.value);
                     if (error) setError(null);
                   }}
-                  placeholder="Enter admin password..."
+                  placeholder="Enter administrator password..."
                   autoFocus
                   required
-                  className="w-full pl-10 pr-12 py-3 bg-slate-950/80 border border-slate-700/80 focus:border-indigo-500 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all"
+                  className="w-full pl-9 pr-10 py-2 bg-zinc-50 border border-zinc-200 focus:border-zinc-900 focus:bg-white rounded-lg text-xs text-zinc-900 placeholder-zinc-400 focus:outline-none transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200 transition-colors"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-600 transition-colors"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
 
             {error && (
-              <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 flex items-center space-x-2.5 text-rose-300 text-xs animate-shake">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 flex items-center space-x-2 text-red-700 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-600" />
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="pt-2 flex items-center justify-end space-x-3">
+            <div className="pt-2 flex items-center justify-end space-x-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700/80 text-slate-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                className="px-3 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 transition-colors"
               >
-                Back to Kiosk Mode
+                Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center space-x-2 transition-all cursor-pointer"
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs rounded-lg shadow-xs flex items-center space-x-1.5 transition-colors"
               >
-                <span>Unlock Portal</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Unlock</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </form>

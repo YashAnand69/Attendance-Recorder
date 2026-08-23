@@ -10,7 +10,7 @@ export const DEFAULT_CLASSROOM: Classroom = {
   teacherName: "Prof. Sarah Jenkins",
 };
 
-// SVG face image generators for initial demo students
+// Safe Base64 SVG Face Avatar Generator
 function generateAvatarSvgDataUrl(name: string, bgHex: string, accessory: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
     <rect width="300" height="300" fill="${bgHex}"/>
@@ -21,7 +21,11 @@ function generateAvatarSvgDataUrl(name: string, bgHex: string, accessory: string
     <path d="M 130 125 Q 150 140 170 125" stroke="#2d3748" stroke-width="4" fill="none" stroke-linecap="round"/>
     <text x="150" y="280" font-family="sans-serif" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">${name}</text>
   </svg>`;
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
+  try {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  } catch (e) {
+    return `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFlMjl4YiIvPjwvc3ZnPg==`;
+  }
 }
 
 export const INITIAL_STUDENTS: Student[] = [

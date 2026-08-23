@@ -7,16 +7,18 @@ import {
   UserX,
   Clock,
   Search,
-  Filter,
   CheckCircle2,
   XCircle,
-  AlertCircle,
   RefreshCw,
   Send,
-  Wifi,
   WifiOff,
-  MapPin,
+  Activity,
+  Download,
+  MailCheck,
   Sparkles,
+  Camera,
+  Check,
+  AlertTriangle,
 } from "lucide-react";
 
 interface DashboardProps {
@@ -45,7 +47,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "present" | "absent" | "late">("all");
   const [sendingAlertStudentId, setSendingAlertStudentId] = useState<string | null>(null);
+  const [isSendingBatchAlerts, setIsSendingBatchAlerts] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<{ name: string; url: string; time: string; confidence: number } | null>(null);
 
   // Map student attendance status for selected date
   const studentStatusMap = new Map<string, AttendanceRecord>();
@@ -57,7 +61,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const totalStudents = students.length;
   const presentCount = students.filter((s) => studentStatusMap.get(s.id)?.status === "present").length;
   const lateCount = students.filter((s) => studentStatusMap.get(s.id)?.status === "late").length;
-  const absentCount = totalStudents - presentCount - lateCount;
+  const absentStudents = students.filter((s) => {
+    const st = studentStatusMap.get(s.id)?.status;
+    return !st || st === "absent";
+  });
+  const absentCount = absentStudents.length;
   const attendanceRate = totalStudents > 0 ? Math.round(((presentCount + lateCount * 0.5) / totalStudents) * 100) : 0;
 
   // Filtered Students List
@@ -74,7 +82,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return matchesSearch && matchesStatus;
   });
 
-  // Manual Override Handler (Teacher Override)
+  // Manual Status Toggle
   const handleToggleStatus = async (student: Student, newStatus: "present" | "absent" | "late") => {
     const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -86,189 +94,289 @@ export const Dashboard: React.FC<DashboardProps> = ({
       date: selectedDate,
       timestamp: timeStr,
       status: newStatus,
-      confidence: 100, // Manual staff override
+      confidence: 100,
       latitude: classroom.latitude,
       longitude: classroom.longitude,
       verificationMethod: "manual",
     });
 
-    setActionNotice(`Updated ${student.name} status to ${newStatus.toUpperCase()}`);
+    setActionNotice(`Updated ${student.name} to ${newStatus}`);
     setTimeout(() => setActionNotice(null), 3000);
     onRecordUpdated();
   };
 
-  // Trigger Parent Alert Email
+  // Bulk mark all unverified as absent
+  const handleMarkAllAbsent = async () => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    let count = 0;
+
+    for (const student of absentStudents) {
+      await logAttendanceRecord({
+        studentId: student.id,
+        studentName: student.name,
+        rollNumber: student.rollNumber,
+        className: classroom.name,
+        date: selectedDate,
+        timestamp: timeStr,
+        status: "absent",
+        confidence: 100,
+        latitude: classroom.latitude,
+        longitude: classroom.longitude,
+        verificationMethod: "manual",
+      });
+      count++;
+    }
+
+    setActionNotice(`Marked ${count} unrecorded students as Absent.`);
+    setTimeout(() => setActionNotice(null), 3500);
+    onRecordUpdated();
+  };
+
+  // Trigger Parent Alert Email for one student
   const handleSendAlert = async (student: Student) => {
     setSendingAlertStudentId(student.id);
     const res = await sendParentAbsentAlert(student, selectedDate, "Marked Absent in Admin Dashboard");
     setSendingAlertStudentId(null);
 
     if (res.success) {
-      setActionNotice(`Automated email alert delivered to parent (${student.parentEmail})`);
+      setActionNotice(`Email alert sent to parent (${student.parentEmail})`);
     } else {
-      setActionNotice(`Failed to send email alert to ${student.parentEmail}`);
+      setActionNotice(`Failed to send email to ${student.parentEmail}`);
     }
     setTimeout(() => setActionNotice(null), 4000);
   };
 
+  // Batch trigger alerts to all absent students' parents
+  const handleBatchAlertAbsentParents = async () => {
+    if (absentStudents.length === 0) {
+      setActionNotice("No absent students to alert.");
+      setTimeout(() => setActionNotice(null), 3000);
+      return;
+    }
+
+    setIsSendingBatchAlerts(true);
+    let successCount = 0;
+
+    for (const student of absentStudents) {
+      try {
+        const res = await sendParentAbsentAlert(student, selectedDate, "Daily automated absence notification");
+        if (res.success) successCount++;
+      } catch (e) {}
+    }
+
+    setIsSendingBatchAlerts(false);
+    setActionNotice(`Successfully dispatched ${successCount} parent absence alert emails.`);
+    setTimeout(() => setActionNotice(null), 5000);
+  };
+
+  // Export Today's Attendance to CSV
+  const handleExportTodayCSV = () => {
+    const headers = ["Roll Number", "Student Name", "Class", "Date", "Status", "Scan Time", "Method", "Confidence (%)", "Parent Email"];
+    const rows = students.map((s) => {
+      const rec = studentStatusMap.get(s.id);
+      return [
+        `"${s.rollNumber}"`,
+        `"${s.name}"`,
+        `"${s.className}"`,
+        `"${selectedDate}"`,
+        `"${rec ? rec.status : "absent"}"`,
+        `"${rec ? rec.timestamp : "—"}"`,
+        `"${rec ? rec.verificationMethod : "unrecorded"}"`,
+        `"${rec ? rec.confidence : 0}"`,
+        `"${s.parentEmail}"`,
+      ];
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Attendance_${classroom.name.replace(/\s+/g, "_")}_${selectedDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Top Banner & Date Picker */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* Top Header Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-            <span>Teacher &amp; Admin Real-Time Oversight</span>
-            <span className="text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono px-2.5 py-0.5 rounded-full">
-              Live Feed
-            </span>
+          <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
+            Attendance Dashboard
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Classroom: <span className="text-indigo-300 font-semibold">{classroom.name}</span> | Teacher:{" "}
-            <span className="text-slate-200">{classroom.teacherName}</span>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {classroom.name} · Instructor: {classroom.teacherName}
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <label className="text-xs font-semibold text-slate-300">Select Date:</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-1.5">
+            <label className="text-xs text-zinc-500 font-medium">Date:</label>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-2.5 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 focus:outline-none focus:border-zinc-900 transition-colors"
+            />
+          </div>
+
+          <button
+            onClick={handleExportTodayCSV}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-700 font-medium transition-colors cursor-pointer"
+            title="Download CSV for selected date"
+          >
+            <Download className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Export CSV</span>
+          </button>
+
+          {absentCount > 0 && (
+            <button
+              onClick={handleBatchAlertAbsentParents}
+              disabled={isSendingBatchAlerts}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-medium shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>{isSendingBatchAlerts ? "Sending..." : `Email ${absentCount} Absent Parents`}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Offline Caching Status Banner */}
+      {/* Offline Status Banner */}
       {(!isOnline || offlineQueueCount > 0) && (
-        <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-4 flex items-center justify-between text-amber-200 text-xs">
-          <div className="flex items-center space-x-3">
-            <WifiOff className="w-5 h-5 text-amber-400 flex-shrink-0" />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-amber-900 text-xs">
+          <div className="flex items-center space-x-2.5">
+            <WifiOff className="w-4 h-4 text-amber-600 shrink-0" />
             <div>
-              <p className="font-bold">
-                {!isOnline ? "Network Connection Lost (Offline Caching Active)" : "Pending Offline Records"}
-              </p>
-              <p className="opacity-80">
-                {offlineQueueCount} attendance records stored locally in IndexedDB cache. Data will auto-sync to Cloud Firestore once connection is restored.
-              </p>
+              <span className="font-semibold">
+                {!isOnline ? "Offline Mode Active" : "Pending Offline Records"}
+              </span>
+              <span className="text-amber-700 ml-1.5">
+                ({offlineQueueCount} stored locally in cache)
+              </span>
             </div>
           </div>
 
           <button
             onClick={onSyncOfflineQueue}
             disabled={!isOnline || offlineQueueCount === 0}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg disabled:opacity-40 transition-colors"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-md disabled:opacity-40 transition-colors"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Sync Now ({offlineQueueCount})</span>
+            <RefreshCw className="w-3 h-3" />
+            <span>Sync</span>
           </button>
         </div>
       )}
 
-      {/* Action Notice Alert */}
+      {/* Action Notice Toast */}
       {actionNotice && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-3 rounded-xl text-xs font-semibold flex items-center space-x-2 animate-fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center space-x-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           <span>{actionNotice}</span>
         </div>
       )}
 
-      {/* Metric Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Students */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Total Enrolled</span>
-            <Users className="w-4 h-4 text-indigo-400" />
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
+            <span className="text-xs font-medium">Total Enrolled</span>
+            <Users className="w-3.5 h-3.5 text-zinc-400" />
           </div>
-          <div className="text-2xl font-black text-white">{totalStudents}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Classroom Roster</p>
+          <div className="text-2xl font-semibold text-zinc-900">{totalStudents}</div>
+          <p className="text-[11px] text-zinc-400 mt-0.5">Students on roster</p>
         </div>
 
-        {/* Present */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Present Today</span>
-            <UserCheck className="w-4 h-4 text-emerald-400" />
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
+            <span className="text-xs font-medium">Present Today</span>
+            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-emerald-400">{presentCount}</div>
-          <p className="text-[11px] text-emerald-500/80 mt-1">Facial Scan Verified</p>
+          <div className="text-2xl font-semibold text-emerald-700">{presentCount}</div>
+          <p className="text-[11px] text-zinc-400 mt-0.5">Verified in class</p>
         </div>
 
-        {/* Absent */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Absent</span>
-            <UserX className="w-4 h-4 text-rose-400" />
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
+            <span className="text-xs font-medium">Absent</span>
+            <UserX className="w-3.5 h-3.5 text-red-600" />
           </div>
-          <div className="text-2xl font-black text-rose-400">{absentCount}</div>
-          <p className="text-[11px] text-rose-400/80 mt-1">Requires Parent Alert</p>
+          <div className="text-2xl font-semibold text-red-700">{absentCount}</div>
+          <p className="text-[11px] text-zinc-400 mt-0.5">Unrecorded presence</p>
         </div>
 
-        {/* Overall Attendance % */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Today's Rate</span>
-            <Sparkles className="w-4 h-4 text-indigo-400" />
+        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
+            <span className="text-xs font-medium">Attendance Rate</span>
+            <Activity className="w-3.5 h-3.5 text-zinc-400" />
           </div>
-          <div className="text-2xl font-black text-indigo-300">{attendanceRate}%</div>
-          <p className="text-[11px] text-indigo-400/80 mt-1">Overall Compliance</p>
+          <div className="text-2xl font-semibold text-zinc-900">{attendanceRate}%</div>
+          <p className="text-[11px] text-zinc-400 mt-0.5">Daily compliance</p>
         </div>
       </div>
 
-      {/* Roster Oversight Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+      {/* Roster Table Card */}
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-xs overflow-hidden">
         {/* Search & Filter Header */}
-        <div className="p-4 sm:p-6 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+        <div className="p-4 border-b border-zinc-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-400" />
             <input
               type="text"
-              placeholder="Search student name or roll..."
+              placeholder="Search by name or roll..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full pl-8 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-900 placeholder-zinc-400 focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
             />
           </div>
 
-          <div className="flex items-center space-x-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center space-x-1 bg-zinc-100 p-0.5 rounded-lg border border-zinc-200/60 text-xs">
               {(["all", "present", "absent", "late"] as const).map((st) => (
                 <button
                   key={st}
                   onClick={() => setStatusFilter(st)}
-                  className={`px-3 py-1 rounded-lg capitalize font-semibold transition-all ${
+                  className={`px-2.5 py-1 rounded-md capitalize font-medium text-xs transition-all ${
                     statusFilter === st
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "text-slate-400 hover:text-white"
+                      ? "bg-white text-zinc-900 shadow-xs"
+                      : "text-zinc-500 hover:text-zinc-800"
                   }`}
                 >
                   {st}
                 </button>
               ))}
             </div>
+
+            {absentCount > 0 && (
+              <button
+                onClick={handleMarkAllAbsent}
+                className="px-2.5 py-1 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Mark Rest Absent
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Student List Table */}
+        {/* Student Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950 text-slate-400 uppercase font-mono text-[10px] tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-xs text-zinc-700">
+            <thead className="bg-zinc-50 text-zinc-500 font-medium text-[11px] border-b border-zinc-200">
               <tr>
-                <th className="px-6 py-3">Student</th>
-                <th className="px-6 py-3">Roll Number</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3">Scan Time</th>
-                <th className="px-6 py-3">Verification Method</th>
-                <th className="px-6 py-3 text-right">Teacher Action</th>
+                <th className="px-5 py-3">Student</th>
+                <th className="px-5 py-3">Roll Number</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Scan Time</th>
+                <th className="px-5 py-3">Verification</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/80">
+            <tbody className="divide-y divide-zinc-100">
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No student records matching your search query.
+                  <td colSpan={6} className="px-5 py-8 text-center text-zinc-400">
+                    No students found matching your criteria.
                   </td>
                 </tr>
               ) : (
@@ -277,75 +385,89 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   const status = record ? record.status : "absent";
 
                   return (
-                    <tr key={student.id} className="hover:bg-slate-800/40 transition-colors">
+                    <tr key={student.id} className="hover:bg-zinc-50/50 transition-colors">
                       {/* Student Info */}
-                      <td className="px-6 py-4 flex items-center space-x-3">
+                      <td className="px-5 py-3.5 flex items-center space-x-3">
                         <img
                           src={student.faceImageDataUrl}
                           alt={student.name}
-                          className="w-9 h-9 rounded-full object-cover border border-slate-700"
+                          className="w-8 h-8 rounded-full object-cover border border-zinc-200"
                         />
                         <div>
-                          <div className="font-bold text-white text-sm">{student.name}</div>
-                          <div className="text-[11px] text-slate-400">{student.parentEmail}</div>
+                          <div className="font-medium text-zinc-900">{student.name}</div>
+                          <div className="text-[11px] text-zinc-400">{student.parentEmail}</div>
                         </div>
                       </td>
 
                       {/* Roll Number */}
-                      <td className="px-6 py-4 font-mono font-medium text-slate-300">
+                      <td className="px-5 py-3.5 font-mono text-zinc-600">
                         {student.rollNumber}
                       </td>
 
                       {/* Status Badge */}
-                      <td className="px-6 py-4">
+                      <td className="px-5 py-3.5">
                         {status === "present" && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" />
                             <span>Present</span>
                           </span>
                         )}
                         {status === "absent" && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                            <XCircle className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-50 text-red-700 border border-red-200">
+                            <XCircle className="w-3 h-3" />
                             <span>Absent</span>
                           </span>
                         )}
                         {status === "late" && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                            <Clock className="w-3.5 h-3.5" />
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            <Clock className="w-3 h-3" />
                             <span>Late</span>
                           </span>
                         )}
                       </td>
 
                       {/* Scan Time */}
-                      <td className="px-6 py-4 font-mono text-slate-400">
-                        {record ? record.timestamp : "--:--"}
+                      <td className="px-5 py-3.5 font-mono text-zinc-500">
+                        {record ? record.timestamp : "—"}
                       </td>
 
-                      {/* Verification Method */}
-                      <td className="px-6 py-4">
+                      {/* Method & Snapshot trigger */}
+                      <td className="px-5 py-3.5">
                         {record ? (
-                          <span className="text-[11px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded font-mono">
-                            {record.verificationMethod === "face_recognition"
-                              ? `AI Face Match (${record.confidence}%)`
-                              : "Teacher Manual"}
-                          </span>
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-[11px] text-zinc-600 bg-zinc-100 border border-zinc-200 px-1.5 py-0.5 rounded font-mono">
+                              {record.verificationMethod === "face_recognition"
+                                ? `AI Face (${record.confidence}%)`
+                                : "Manual"}
+                            </span>
+                            {record.snapshotUrl && (
+                              <button
+                                onClick={() =>
+                                  setSelectedSnapshot({
+                                    name: student.name,
+                                    url: record.snapshotUrl!,
+                                    time: record.timestamp,
+                                    confidence: record.confidence,
+                                  })
+                                }
+                                className="p-0.5 text-zinc-400 hover:text-zinc-700 rounded transition-colors"
+                                title="View verification frame snapshot"
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-slate-500">Unscanned</span>
+                          <span className="text-zinc-400">Unrecorded</span>
                         )}
                       </td>
 
-                      {/* Teacher Actions */}
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
+                      {/* Actions */}
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
                           <button
                             onClick={() => handleToggleStatus(student, status === "present" ? "absent" : "present")}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                              status === "present"
-                                ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-                                : "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                            }`}
+                            className="px-2.5 py-1 rounded-md text-xs font-medium border border-zinc-200 text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
                           >
                             Mark {status === "present" ? "Absent" : "Present"}
                           </button>
@@ -354,8 +476,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <button
                               onClick={() => handleSendAlert(student)}
                               disabled={sendingAlertStudentId === student.id}
-                              className="p-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg transition-colors border border-amber-500/30"
-                              title="Send automated email alert to parent"
+                              className="p-1 text-zinc-500 hover:text-zinc-900 border border-zinc-200 rounded-md hover:bg-zinc-100 transition-colors cursor-pointer"
+                              title="Send parent absent alert"
                             >
                               <Send className="w-3.5 h-3.5" />
                             </button>
@@ -370,6 +492,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Snapshot Preview Modal */}
+      {selectedSnapshot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-xs">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xl max-w-sm w-full space-y-3 text-zinc-900">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-100">
+              <div>
+                <h4 className="text-xs font-semibold">{selectedSnapshot.name}</h4>
+                <p className="text-[11px] text-zinc-500">
+                  Scanned at {selectedSnapshot.time} · {selectedSnapshot.confidence}% Match
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedSnapshot(null)}
+                className="text-zinc-400 hover:text-zinc-600 p-1 rounded-md text-xs"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="aspect-4/3 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-200 flex items-center justify-center">
+              <img
+                src={selectedSnapshot.url}
+                alt="Verification Frame"
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <button
+              onClick={() => setSelectedSnapshot(null)}
+              className="w-full py-1.5 bg-zinc-900 text-white rounded-lg text-xs font-medium hover:bg-zinc-800 transition-colors"
+            >
+              Close Snapshot
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

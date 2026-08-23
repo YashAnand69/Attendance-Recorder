@@ -157,7 +157,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans antialiased selection:bg-zinc-900 selection:text-white">
       {/* Application Navigation Bar */}
       <Header
         activeTab={activeTab}
@@ -180,26 +180,26 @@ export default function App() {
 
       {/* Admin Mode Bar Banner if Unlocked */}
       {isAdminUnlocked && (
-        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 border-b border-emerald-500/30 px-4 py-2 text-xs">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-emerald-300 font-medium">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Admin Portal Authenticated &amp; Active</span>
-              <span className="hidden sm:inline text-slate-400">| Full Administrative Controls Unlocked</span>
+        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-1.5 text-xs">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-emerald-900 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Admin Mode Active</span>
+              <span className="hidden sm:inline text-emerald-700 font-normal">· Full administrative privileges unlocked</span>
             </div>
             <button
               onClick={handleLockAdmin}
-              className="flex items-center space-x-1 px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+              className="flex items-center space-x-1 px-2 py-0.5 bg-white hover:bg-emerald-100/60 text-emerald-800 border border-emerald-300 rounded text-[11px] font-medium transition-colors cursor-pointer"
             >
-              <LogOut className="w-3 h-3" />
-              <span>Lock Portal</span>
+              <LogOut className="w-3 h-3 text-emerald-600" />
+              <span>Lock Admin</span>
             </button>
           </div>
         </div>
       )}
 
       {/* Main Container Viewport */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === "scanner" && (
           <CameraScanner
             students={students}

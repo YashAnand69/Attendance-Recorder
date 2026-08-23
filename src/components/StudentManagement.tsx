@@ -1,7 +1,23 @@
 import React, { useState, useRef } from "react";
 import { Student } from "../types";
 import { addStudent, deleteStudent } from "../lib/attendanceStore";
-import { UserPlus, Camera, Upload, Trash2, CheckCircle, ShieldCheck, Mail, Phone, Hash, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  UserPlus,
+  Camera,
+  Upload,
+  Trash2,
+  CheckCircle,
+  Mail,
+  Phone,
+  AlertTriangle,
+  Loader2,
+  X,
+  User,
+  Search,
+  Download,
+  Eye,
+  ShieldCheck,
+} from "lucide-react";
 
 interface StudentManagementProps {
   students: Student[];
@@ -18,6 +34,12 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 }) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStudentModal, setSelectedStudentModal] = useState<Student | null>(null);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+
+  // Form states
   const [name, setName] = useState("");
   const [rollNumber, setRollNumber] = useState("");
   const [parentEmail, setParentEmail] = useState("");
@@ -31,7 +53,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Compress Base64 image to prevent hitting Firestore/localStorage quotas
+  // Compress Base64 image
   const compressImage = (dataUrl: string, maxDim = 320, quality = 0.85): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -75,7 +97,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         videoRef.current.play();
       }
     } catch (e) {
-      alert("Camera access denied or unavailable for registration photo.");
+      setErrorMessage("Camera access denied or unavailable for registration photo.");
       setUseCamera(false);
     }
   };
@@ -123,7 +145,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     setStatusNotice(null);
 
     if (!faceImageDataUrl) {
-      alert("Please capture or upload a facial photograph of the student.");
+      setErrorMessage("Please capture or upload a facial photograph of the student.");
       return;
     }
 
@@ -140,7 +162,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       });
 
       onStudentAdded(newStudent);
-      setStatusNotice(`Registered ${name} successfully! Face profile saved to cloud database.`);
+      setStatusNotice(`Enrolled ${name} successfully`);
 
       // Reset Form
       setName("");
@@ -150,178 +172,246 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       setFaceImageDataUrl(null);
       setIsRegistering(false);
 
-      setTimeout(() => setStatusNotice(null), 5000);
+      setTimeout(() => setStatusNotice(null), 4000);
     } catch (err: any) {
       console.error("Failed saving student profile:", err);
-      setErrorMessage(err?.message || "Failed to save student profile. Please verify network/database connection.");
+      setErrorMessage(err?.message || "Failed to save student profile. Please check connection.");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle Delete Student
-  const handleDeleteStudent = async (studentId: string, studentName: string) => {
-    if (window.confirm(`Are you sure you want to delete ${studentName}'s biometric profile?`)) {
-      try {
-        await deleteStudent(studentId);
-        if (onStudentDeleted) {
-          onStudentDeleted(studentId);
-        }
-        setStatusNotice(`Deleted ${studentName}'s profile.`);
-        setTimeout(() => setStatusNotice(null), 4000);
-      } catch (e) {
-        setErrorMessage("Failed to delete student profile.");
+  // Trigger Delete Confirmation Modal
+  const handleRequestDelete = (student: Student, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setStudentToDelete(student);
+  };
+
+  // Execute Confirmed Student Deletion
+  const handleConfirmDelete = async () => {
+    if (!studentToDelete) return;
+    const targetStudent = studentToDelete;
+    setIsDeleting(true);
+    try {
+      await deleteStudent(targetStudent.id);
+      if (onStudentDeleted) {
+        onStudentDeleted(targetStudent.id);
       }
+      if (selectedStudentModal?.id === targetStudent.id) {
+        setSelectedStudentModal(null);
+      }
+      setStudentToDelete(null);
+      setStatusNotice(`Removed ${targetStudent.name} from class roster`);
+      setTimeout(() => setStatusNotice(null), 3500);
+    } catch (e) {
+      console.error("Error deleting student:", e);
+      setErrorMessage("Failed to remove student profile. Please try again.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
+  // Export Roster CSV
+  const handleExportRosterCSV = () => {
+    const headers = ["ID", "Roll Number", "Full Name", "Class", "Parent Email", "Parent Phone", "Enrolled Date"];
+    const rows = students.map((s) => [
+      `"${s.id}"`,
+      `"${s.rollNumber}"`,
+      `"${s.name}"`,
+      `"${s.className}"`,
+      `"${s.parentEmail}"`,
+      `"${s.parentPhone || ""}"`,
+      `"${s.createdAt || ""}"`,
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Roster_${className.replace(/\s+/g, "_")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredStudents = students.filter(
+    (s) =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.rollNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.parentEmail.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {/* Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white flex items-center space-x-2">
-            <UserPlus className="w-5 h-5 text-indigo-400" />
-            <span>Student Biometric Profiles</span>
+          <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
+            Student Profiles & Roster
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Register student faces once. The AI will recognize them automatically for every subsequent attendance scan.
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Manage biometric face enrollment and student contact records for {className}.
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setIsRegistering(!isRegistering);
-            setErrorMessage(null);
-          }}
-          className="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>{isRegistering ? "Close Form" : "Register New Student"}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExportRosterCSV}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-700 font-medium transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Export Roster</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsRegistering(!isRegistering);
+              setErrorMessage(null);
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+              isRegistering
+                ? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                : "bg-zinc-900 hover:bg-zinc-800 text-white"
+            }`}
+          >
+            {isRegistering ? (
+              <>
+                <X className="w-3.5 h-3.5" />
+                <span>Cancel</span>
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Enroll Student</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {statusNotice && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 p-4 rounded-xl text-xs font-semibold flex items-center space-x-2">
-          <CheckCircle className="w-4 h-4 text-emerald-400" />
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center space-x-2">
+          <CheckCircle className="w-4 h-4 text-emerald-600" />
           <span>{statusNotice}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 p-4 rounded-xl text-xs font-semibold flex items-center space-x-2">
-          <AlertTriangle className="w-4 h-4 text-rose-400" />
+        <div className="bg-red-50 border border-red-200 text-red-800 px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center space-x-2">
+          <AlertTriangle className="w-4 h-4 text-red-600" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Registration Form Drawer */}
+      {/* Registration Form */}
       {isRegistering && (
-        <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-2xl text-slate-200 animate-fade-in space-y-6">
-          <div className="border-b border-slate-800 pb-3">
-            <h3 className="text-base font-bold text-white">New Student Enrollment &amp; Facial Indexing</h3>
-            <p className="text-xs text-slate-400">
-              Provide student details and facial profile image for real-time recognition.
+        <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
+          <div className="border-b border-zinc-100 pb-3 mb-4">
+            <h3 className="text-sm font-semibold text-zinc-900">New Student Enrollment</h3>
+            <p className="text-xs text-zinc-500">
+              Provide student details and reference photo for AI recognition.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-            {/* Left Inputs */}
-            <div className="space-y-4">
+            {/* Form Fields */}
+            <div className="space-y-3.5">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Full Name</label>
+                <label className="block font-medium text-zinc-700 mb-1">Full Name</label>
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Jordan Miller"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder-zinc-400 focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Roll Number / Student ID</label>
+                <label className="block font-medium text-zinc-700 mb-1">Roll / Student ID</label>
                 <input
                   type="text"
                   required
                   value={rollNumber}
                   onChange={(e) => setRollNumber(e.target.value)}
-                  placeholder="e.g. CS2026-008"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g. CS-2026-042"
+                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder-zinc-400 focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Parent/Guardian Email (for Absent Alerts)</label>
+                <label className="block font-medium text-zinc-700 mb-1">Parent / Guardian Email</label>
                 <input
                   type="email"
                   required
                   value={parentEmail}
                   onChange={(e) => setParentEmail(e.target.value)}
-                  placeholder="parent.email@example.com"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="parent@example.com"
+                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder-zinc-400 focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Parent Phone Number</label>
+                <label className="block font-medium text-zinc-700 mb-1">Parent Phone (Optional)</label>
                 <input
                   type="tel"
                   value={parentPhone}
                   onChange={(e) => setParentPhone(e.target.value)}
                   placeholder="+1 (555) 000-0000"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-900 placeholder-zinc-400 focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
                 />
               </div>
             </div>
 
-            {/* Right Input: Facial Photo Capture */}
-            <div className="space-y-4 flex flex-col justify-between">
+            {/* Photo Capture Section */}
+            <div className="space-y-3 flex flex-col justify-between">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Facial Recognition Reference Photo
+                <label className="block font-medium text-zinc-700 mb-1">
+                  Face Reference Photo
                 </label>
 
-                <div className="aspect-square w-48 h-48 mx-auto bg-slate-950 rounded-2xl border-2 border-dashed border-slate-700 overflow-hidden flex items-center justify-center relative">
+                <div className="aspect-square w-40 h-40 mx-auto bg-zinc-100 rounded-xl border border-dashed border-zinc-300 overflow-hidden flex items-center justify-center relative">
                   {useCamera ? (
                     <div className="relative w-full h-full">
-                      <video ref={videoRef} className="w-full h-full object-cover transform -scale-x-100" />
+                      <video ref={videoRef} className="w-full h-full object-cover -scale-x-100" />
                       <button
                         type="button"
                         onClick={capturePhoto}
-                        className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-emerald-600 text-white font-bold text-[11px] rounded-lg shadow-lg"
+                        className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-zinc-900 text-white font-medium text-[11px] rounded-md shadow-sm"
                       >
-                        Snap Photo
+                        Capture
                       </button>
                     </div>
                   ) : faceImageDataUrl ? (
-                    <img src={faceImageDataUrl} alt="Student Face" className="w-full h-full object-cover" />
+                    <img src={faceImageDataUrl} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="text-center p-4 text-slate-500">
-                      <ShieldCheck className="w-8 h-8 mx-auto mb-1 text-slate-600" />
-                      <span>No Face Image Loaded</span>
+                    <div className="text-center p-3 text-zinc-400">
+                      <User className="w-8 h-8 mx-auto mb-1 text-zinc-300" />
+                      <span className="text-[11px]">No photo loaded</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-center space-x-3 mt-3">
+                <div className="flex items-center justify-center space-x-2 mt-3">
                   <button
                     type="button"
                     onClick={startCamera}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs"
+                    className="flex items-center space-x-1 px-2.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-md text-xs font-medium transition-colors"
                   >
-                    <Camera className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Use Camera</span>
+                    <Camera className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Camera</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs"
+                    className="flex items-center space-x-1 px-2.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-md text-xs font-medium transition-colors"
                   >
-                    <Upload className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Upload Image</span>
+                    <Upload className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Upload</span>
                   </button>
                   <input
                     ref={fileInputRef}
@@ -333,27 +423,27 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end space-x-3">
+              <div className="pt-3 border-t border-zinc-100 flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setIsRegistering(false)}
                   disabled={isSaving}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg disabled:opacity-50"
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium rounded-lg disabled:opacity-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg shadow-lg shadow-indigo-600/30 flex items-center space-x-2 disabled:opacity-50"
+                  className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white font-medium rounded-lg flex items-center space-x-1.5 disabled:opacity-50 transition-colors"
                 >
                   {isSaving ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving Profile...</span>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Save Student Profile</span>
+                    <span>Save Student</span>
                   )}
                 </button>
               </div>
@@ -362,57 +452,204 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         </div>
       )}
 
+      {/* Search Filter Bar */}
+      <div className="relative max-w-sm">
+        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-zinc-400" />
+        <input
+          type="text"
+          placeholder="Search students by name, roll, or parent email..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-8 pr-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-900 transition-colors"
+        />
+      </div>
+
       {/* Enrolled Students Card Gallery */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {students.map((student) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+        {filteredStudents.map((student) => (
           <div
             key={student.id}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between hover:border-slate-700 transition-all relative group"
+            onClick={() => setSelectedStudentModal(student)}
+            className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs flex flex-col justify-between relative group hover:border-zinc-400 transition-colors cursor-pointer"
           >
             <button
-              onClick={() => handleDeleteStudent(student.id, student.name)}
-              title="Delete Profile"
-              className="absolute top-3 right-3 p-1.5 text-slate-500 hover:text-rose-400 bg-slate-800/80 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer opacity-80 group-hover:opacity-100"
+              onClick={(e) => handleRequestDelete(student, e)}
+              title="Remove student"
+              className="absolute top-3 right-3 p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
 
             <div className="space-y-3">
-              <div className="relative w-20 h-20 mx-auto rounded-2xl overflow-hidden border-2 border-indigo-500/40 shadow-md">
+              <div className="relative w-16 h-16 mx-auto rounded-full overflow-hidden border border-zinc-200 shadow-xs">
                 <img
                   src={student.faceImageDataUrl}
                   alt={student.name}
                   className="w-full h-full object-cover"
                 />
-                <span className="absolute bottom-1 right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900" />
               </div>
 
               <div className="text-center">
-                <h3 className="font-bold text-white text-sm">{student.name}</h3>
-                <p className="text-[11px] font-mono text-indigo-300">{student.rollNumber}</p>
+                <h3 className="font-medium text-zinc-900 text-sm">{student.name}</h3>
+                <p className="text-[11px] font-mono text-zinc-500">{student.rollNumber}</p>
               </div>
 
-              <div className="space-y-1 text-[11px] text-slate-400 pt-2 border-t border-slate-800">
+              <div className="space-y-1 text-[11px] text-zinc-500 pt-2 border-t border-zinc-100">
                 <div className="flex items-center space-x-1.5 truncate">
-                  <Mail className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                  <Mail className="w-3 h-3 text-zinc-400 shrink-0" />
                   <span className="truncate">{student.parentEmail}</span>
                 </div>
                 {student.parentPhone && (
                   <div className="flex items-center space-x-1.5">
-                    <Phone className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                    <Phone className="w-3 h-3 text-zinc-400 shrink-0" />
                     <span>{student.parentPhone}</span>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-500">
-              <span>Face Indexed</span>
-              <span className="font-mono text-emerald-400">Active Profile</span>
+            <div className="mt-3 pt-2.5 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-400">
+              <span className="flex items-center space-x-1 text-zinc-500">
+                <Eye className="w-3 h-3" />
+                <span>View Profile</span>
+              </span>
+              <span className="font-mono text-emerald-600 font-medium">Active</span>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Student Profile Details Modal */}
+      {selectedStudentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-xs">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-xl max-w-md w-full space-y-4 text-zinc-900">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
+              <div>
+                <h4 className="text-base font-semibold">{selectedStudentModal.name}</h4>
+                <p className="text-xs text-zinc-500 font-mono">Roll: {selectedStudentModal.rollNumber}</p>
+              </div>
+              <button
+                onClick={() => setSelectedStudentModal(null)}
+                className="text-zinc-400 hover:text-zinc-600 p-1 rounded-md text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-zinc-200 bg-zinc-100 shrink-0">
+                <img
+                  src={selectedStudentModal.faceImageDataUrl}
+                  alt={selectedStudentModal.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
+              <div className="space-y-1.5 text-xs text-zinc-600">
+                <div className="flex items-center space-x-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="font-medium text-zinc-900">Biometric Profile Enrolled</span>
+                </div>
+                <p>
+                  <strong className="text-zinc-700">Class:</strong> {selectedStudentModal.className}
+                </p>
+                <p className="truncate">
+                  <strong className="text-zinc-700">Parent:</strong> {selectedStudentModal.parentEmail}
+                </p>
+                {selectedStudentModal.parentPhone && (
+                  <p>
+                    <strong className="text-zinc-700">Phone:</strong> {selectedStudentModal.parentPhone}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-zinc-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => handleRequestDelete(selectedStudentModal)}
+                className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg font-medium transition-colors cursor-pointer"
+              >
+                Delete Student
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedStudentModal(null)}
+                className="px-4 py-1.5 bg-zinc-900 text-white rounded-lg text-xs font-medium hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated In-App Student Deletion Confirmation Modal */}
+      {studentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/50 backdrop-blur-xs">
+          <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-2xl max-w-sm w-full space-y-4 text-zinc-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-zinc-900">Delete Student Profile</h4>
+                <p className="text-xs text-zinc-500">Remove from classroom enrollment roster</p>
+              </div>
+            </div>
+
+            {/* Student Preview Card */}
+            <div className="bg-zinc-50 border border-zinc-200/80 rounded-xl p-3 flex items-center space-x-3">
+              <div className="w-12 h-12 rounded-full overflow-hidden border border-zinc-200 bg-white shrink-0">
+                <img
+                  src={studentToDelete.faceImageDataUrl}
+                  alt={studentToDelete.name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-zinc-900 text-xs truncate">{studentToDelete.name}</p>
+                <p className="text-[11px] font-mono text-zinc-500">Roll: {studentToDelete.rollNumber}</p>
+                <p className="text-[11px] text-zinc-500">{studentToDelete.className}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Are you sure you want to delete this student? This action permanently removes their biometric facial template and unenrolls them from automated attendance scanning.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setStudentToDelete(null)}
+                className="px-3.5 py-1.5 bg-zinc-100 hover:bg-zinc-200 disabled:opacity-50 text-zinc-700 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Student</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

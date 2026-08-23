@@ -48,12 +48,18 @@ export function saveOfflineQueue(queue: AttendanceRecord[]): void {
 // -------------------------------------------------------------
 export async function seedInitialDataIfNeeded(): Promise<void> {
   try {
+    const isSeeded = localStorage.getItem("smart_attendance_seeded_v1");
+    if (isSeeded) return;
+
     const studentsSnap = await getDocs(collection(db, STUDENTS_COLLECTION));
     if (studentsSnap.empty) {
       console.log("Seeding Firestore with initial students...");
       for (const student of INITIAL_STUDENTS) {
         await setDoc(doc(db, STUDENTS_COLLECTION, student.id), student);
       }
+      localStorage.setItem("smart_attendance_seeded_v1", "true");
+    } else {
+      localStorage.setItem("smart_attendance_seeded_v1", "true");
     }
 
     const classSnap = await getDocs(collection(db, CLASSROOMS_COLLECTION));
@@ -71,15 +77,13 @@ export async function seedInitialDataIfNeeded(): Promise<void> {
 export async function fetchStudents(): Promise<Student[]> {
   try {
     const querySnapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
-    if (!querySnapshot.empty) {
-      const students: Student[] = [];
-      querySnapshot.forEach((docSnap) => {
-        students.push(docSnap.data() as Student);
-      });
-      // Cache locally
-      localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(students));
-      return students;
-    }
+    const students: Student[] = [];
+    querySnapshot.forEach((docSnap) => {
+      students.push(docSnap.data() as Student);
+    });
+    // Cache locally
+    localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(students));
+    return students;
   } catch (e) {
     console.warn("Offline fallback for student retrieval", e);
   }
@@ -87,7 +91,7 @@ export async function fetchStudents(): Promise<Student[]> {
   // Fallback to local storage cache or initial mock data
   try {
     const cached = localStorage.getItem(LOCAL_STORAGE_STUDENTS_KEY);
-    if (cached) return JSON.parse(cached);
+    if (cached !== null) return JSON.parse(cached);
   } catch (err) {}
 
   return INITIAL_STUDENTS;
@@ -143,12 +147,17 @@ export async function deleteStudent(studentId: string): Promise<void> {
 
   try {
     const cached = localStorage.getItem(LOCAL_STORAGE_STUDENTS_KEY);
+    let current: Student[] = [];
     if (cached) {
-      const current: Student[] = JSON.parse(cached);
-      const filtered = current.filter((s) => s.id !== studentId);
-      localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(filtered));
+      current = JSON.parse(cached);
+    } else {
+      current = INITIAL_STUDENTS;
     }
-  } catch (err) {}
+    const filtered = current.filter((s) => s.id !== studentId);
+    localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(filtered));
+  } catch (err) {
+    console.warn("Failed to update local cache on student deletion:", err);
+  }
 }
 
 // -------------------------------------------------------------
@@ -295,46 +304,64 @@ export async function sendParentAbsentAlert(
   }
 }
 
-// Helper to convert SVG data URLs to JPEG base64 so Gemini Vision models can process them
+// Helper to safely prepare student face images for AI multi-modal comparison
 export async function ensureRasterStudentImages(students: Student[]): Promise<Student[]> {
   if (typeof window === "undefined") return students;
 
-  const processed = await Promise.all(
-    students.map(async (student) => {
-      if (!student.faceImageDataUrl || (!student.faceImageDataUrl.startsWith("data:image/svg") && !student.faceImageDataUrl.includes("<svg"))) {
-        return student;
-      }
+  try {
+    const processed = await Promise.all(
+      students.map(async (student) => {
+        const rawUrl = student.faceImageDataUrl || "";
+        if (!rawUrl || (!rawUrl.includes("image/svg") && !rawUrl.includes("<svg"))) {
+          return student;
+        }
 
-      try {
-        const rasterJpeg = await new Promise<string>((resolve) => {
-          const img = new Image();
-          img.crossOrigin = "anonymous";
-          img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = 300;
-            canvas.height = 300;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-              ctx.fillStyle = "#1e293b";
-              ctx.fillRect(0, 0, 300, 300);
-              ctx.drawImage(img, 0, 0, 300, 300);
-              resolve(canvas.toDataURL("image/jpeg", 0.85));
-            } else {
-              resolve(student.faceImageDataUrl);
+        try {
+          const rasterJpeg = await new Promise<string>((resolve) => {
+            const timeout = setTimeout(() => resolve(rawUrl), 600);
+            try {
+              const img = new Image();
+              img.crossOrigin = "anonymous";
+              img.onload = () => {
+                clearTimeout(timeout);
+                try {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = 240;
+                  canvas.height = 240;
+                  const ctx = canvas.getContext("2d");
+                  if (ctx) {
+                    ctx.fillStyle = "#1e293b";
+                    ctx.fillRect(0, 0, 240, 240);
+                    ctx.drawImage(img, 0, 0, 240, 240);
+                    resolve(canvas.toDataURL("image/jpeg", 0.8));
+                  } else {
+                    resolve(rawUrl);
+                  }
+                } catch {
+                  resolve(rawUrl);
+                }
+              };
+              img.onerror = () => {
+                clearTimeout(timeout);
+                resolve(rawUrl);
+              };
+              img.src = rawUrl;
+            } catch {
+              clearTimeout(timeout);
+              resolve(rawUrl);
             }
-          };
-          img.onerror = () => resolve(student.faceImageDataUrl);
-          img.src = student.faceImageDataUrl;
-        });
+          });
 
-        return { ...student, faceImageDataUrl: rasterJpeg };
-      } catch (err) {
-        return student;
-      }
-    })
-  );
-
-  return processed;
+          return { ...student, faceImageDataUrl: rasterJpeg };
+        } catch {
+          return student;
+        }
+      })
+    );
+    return processed;
+  } catch {
+    return students;
+  }
 }
 
 // -------------------------------------------------------------
