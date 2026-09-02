@@ -114,13 +114,21 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   // Capture Photo from Camera
   const capturePhoto = () => {
     if (!videoRef.current) return;
+    const video = videoRef.current;
     const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 320;
+    const vWidth = video.videoWidth || 640;
+    const vHeight = video.videoHeight || 480;
+    const minDim = Math.min(vWidth, vHeight);
+    const sx = (vWidth - minDim) / 2;
+    const sy = (vHeight - minDim) / 2;
+
+    canvas.width = 440;
+    canvas.height = 440;
     const ctx = canvas.getContext("2d");
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, 320, 320);
-      setFaceImageDataUrl(canvas.toDataURL("image/jpeg", 0.85));
+      // Draw centered square crop preserving original natural facial proportions
+      ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 440, 440);
+      setFaceImageDataUrl(canvas.toDataURL("image/jpeg", 0.9));
     }
     stopCamera();
   };

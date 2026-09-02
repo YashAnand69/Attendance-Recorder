@@ -22,6 +22,7 @@ import {
   Check,
   ChevronRight,
   HelpCircle,
+  Upload,
 } from "lucide-react";
 
 interface CameraScannerProps {
@@ -48,6 +49,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Verification states
   const [scanResult, setScanResult] = useState<FacialRecognitionResult | null>(null);
+  const [lastScannedFrame, setLastScannedFrame] = useState<string | null>(null);
   const [locationResult, setLocationResult] = useState<ClassroomVerificationResult | null>(null);
   const [lastLoggedStudent, setLastLoggedStudent] = useState<Student | null>(null);
   const [lastLogTimestamp, setLastLogTimestamp] = useState<string | null>(null);
@@ -55,6 +57,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [selectedAbsentStudentId, setSelectedAbsentStudentId] = useState<string>("");
   const [cooldownStudentIds, setCooldownStudentIds] = useState<Record<string, number>>({});
   const [flashSuccess, setFlashSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Device Location
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -146,27 +149,79 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     refreshLocation();
   }, [refreshLocation]);
 
-  // Capture frame
+  // Fast helper to resize & compress image payloads for sub-second AI inference
+  const compressFrame = async (dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 380;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.75));
+          return;
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  // High-speed frame capture with optimized downsampling
   const captureFrame = (): string | null => {
     if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
     try {
-      const width = video.videoWidth || 640;
-      const height = video.videoHeight || 480;
+      const vWidth = video.videoWidth || 640;
+      const vHeight = video.videoHeight || 480;
 
-      canvas.width = width;
-      canvas.height = height;
+      // Scale to 380px wide for ~20KB payload & rapid network transfer
+      const targetWidth = 380;
+      const targetHeight = Math.round((vHeight / vWidth) * targetWidth);
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return null;
 
-      ctx.drawImage(video, 0, 0, width, height);
-      return canvas.toDataURL("image/jpeg", 0.85);
+      ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+      return canvas.toDataURL("image/jpeg", 0.75);
     } catch (e) {
       console.error("Frame capture error:", e);
       return null;
+    }
+  };
+
+  // Handle file upload for test scanning
+  const handleUploadTestFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        if (typeof reader.result === "string") {
+          const compressed = await compressFrame(reader.result);
+          executeScan(compressed);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -174,7 +229,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const executeScan = async (overrideFrame?: string) => {
     if (isScanning) return;
 
-    const frameBase64 = overrideFrame || captureFrame();
+    let frameBase64 = overrideFrame || captureFrame();
     if (!frameBase64) {
       setScanResult({
         matched: false,
@@ -184,6 +239,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       return;
     }
 
+    if (overrideFrame) {
+      frameBase64 = await compressFrame(frameBase64);
+    }
+
+    setLastScannedFrame(frameBase64);
     setIsScanning(true);
     setParentAlertStatus(null);
 
@@ -290,10 +350,18 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     } catch (error: any) {
       console.error("Scan error:", error);
       audioFeedback.playWarningTone();
+      let errorMsg = error.message || "Facial recognition could not verify identity. Please re-center face.";
+      if (typeof errorMsg === "string" && (errorMsg.includes("{") || errorMsg.includes("404") || errorMsg.includes("500"))) {
+        try {
+          const cleanJson = errorMsg.replace(/^Error:\s*/, "").trim();
+          const parsed = JSON.parse(cleanJson);
+          errorMsg = parsed?.error?.message || parsed?.message || errorMsg;
+        } catch (_) {}
+      }
       setScanResult({
         matched: false,
         confidence: 0,
-        verificationNotes: error.message || "Facial recognition could not verify identity. Please re-center face.",
+        verificationNotes: errorMsg,
       });
     } finally {
       setIsScanning(false);
@@ -508,11 +576,28 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-zinc-700 flex items-center space-x-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
-                <span>Simulate / Quick Test with Enrolled Profile</span>
+                <span>Test & Simulation Tools</span>
               </span>
-              <span className="text-[11px] text-zinc-400">Click student to test AI recognition</span>
+              <span className="text-[11px] text-zinc-400">Click profile or upload image</span>
             </div>
             <div className="flex items-center space-x-2 overflow-x-auto pb-1">
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={handleUploadTestFile}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isScanning}
+                className="flex items-center space-x-1.5 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-medium shrink-0 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                title="Upload custom image to test facial recognition"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload Test Photo</span>
+              </button>
+
               {students.slice(0, 6).map((student) => (
                 <button
                   key={student.id}
@@ -549,13 +634,13 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       : "bg-red-50 text-red-700 border-red-200"
                   }`}
                 >
-                  {scanResult.matched ? `${scanResult.confidence}% Confidence` : "No Match"}
+                  {scanResult.matched ? `${scanResult.confidence}% Biometric Match` : "No Match Found"}
                 </span>
               )}
             </div>
 
             {scanResult ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-start space-x-3">
                   <div
                     className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
@@ -574,15 +659,61 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                     <h3 className="text-sm font-semibold text-zinc-900">
                       {scanResult.matched
                         ? scanResult.studentName
-                        : "Unrecognized Student"}
+                        : "Unrecognized Face"}
                     </h3>
                     <p className="text-xs text-zinc-500">
                       {scanResult.matched
-                        ? `Roll Number: ${scanResult.rollNumber || "N/A"}`
-                        : "Face does not match any registered student profile."}
+                        ? `Roll ${scanResult.rollNumber || "N/A"} · ${scanResult.className || classroom.name}`
+                        : "Face does not match any enrolled student in this classroom."}
                     </p>
                   </div>
                 </div>
+
+                {/* Side-by-side Visual Inspection if available */}
+                {(lastScannedFrame || (scanResult.matched && scanResult.studentId)) && (
+                  <div className="grid grid-cols-2 gap-2 p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl">
+                    {lastScannedFrame && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-medium text-zinc-500 block">Captured Frame</span>
+                        <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
+                          <img
+                            src={lastScannedFrame}
+                            alt="Scanned Live Frame"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {scanResult.matched && scanResult.studentId && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-medium text-zinc-500 block">Enrolled Reference</span>
+                        <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
+                          {(() => {
+                            const matchedStudent = students.find((s) => s.id === scanResult.studentId);
+                            return matchedStudent?.faceImageDataUrl ? (
+                              <img
+                                src={matchedStudent.faceImageDataUrl}
+                                alt={matchedStudent.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-400">
+                                <User className="w-6 h-6" />
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                    {!scanResult.matched && lastScannedFrame && (
+                      <div className="flex flex-col justify-center space-y-1.5 p-1 text-[11px] text-zinc-500 leading-snug">
+                        <span className="font-semibold text-zinc-700">Tip to test:</span>
+                        <span>1. Use the enrolled student buttons below, or</span>
+                        <span>2. Register yourself with a clear photo in the Students tab.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {scanResult.verificationNotes && (
                   <p className="text-xs text-zinc-600 bg-zinc-50 p-2.5 rounded-lg border border-zinc-100 leading-relaxed">

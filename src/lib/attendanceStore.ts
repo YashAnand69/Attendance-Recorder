@@ -21,7 +21,7 @@ const ATTENDANCE_COLLECTION = "attendance_logs";
 const ALERTS_COLLECTION = "parent_alerts";
 
 const LOCAL_STORAGE_OFFLINE_QUEUE_KEY = "smart_attendance_offline_queue_v1";
-const LOCAL_STORAGE_STUDENTS_KEY = "smart_attendance_students_cache_v1";
+const LOCAL_STORAGE_STUDENTS_KEY = "smart_attendance_students_cache_v2";
 
 // -------------------------------------------------------------
 // Offline Queue Management
@@ -48,7 +48,7 @@ export function saveOfflineQueue(queue: AttendanceRecord[]): void {
 // -------------------------------------------------------------
 export async function seedInitialDataIfNeeded(): Promise<void> {
   try {
-    const isSeeded = localStorage.getItem("smart_attendance_seeded_v1");
+    const isSeeded = localStorage.getItem("smart_attendance_seeded_v2");
     if (isSeeded) return;
 
     const studentsSnap = await getDocs(collection(db, STUDENTS_COLLECTION));
@@ -57,9 +57,22 @@ export async function seedInitialDataIfNeeded(): Promise<void> {
       for (const student of INITIAL_STUDENTS) {
         await setDoc(doc(db, STUDENTS_COLLECTION, student.id), student);
       }
-      localStorage.setItem("smart_attendance_seeded_v1", "true");
+      localStorage.setItem("smart_attendance_seeded_v2", "true");
     } else {
-      localStorage.setItem("smart_attendance_seeded_v1", "true");
+      // Check if any existing student has old SVG avatar and upgrade to realistic headshot
+      studentsSnap.forEach(async (docSnap) => {
+        const data = docSnap.data() as Student;
+        if (data.faceImageDataUrl && data.faceImageDataUrl.includes("image/svg")) {
+          const matchInitial = INITIAL_STUDENTS.find((s) => s.id === data.id);
+          if (matchInitial) {
+            await setDoc(doc(db, STUDENTS_COLLECTION, data.id), {
+              ...data,
+              faceImageDataUrl: matchInitial.faceImageDataUrl,
+            });
+          }
+        }
+      });
+      localStorage.setItem("smart_attendance_seeded_v2", "true");
     }
 
     const classSnap = await getDocs(collection(db, CLASSROOMS_COLLECTION));
