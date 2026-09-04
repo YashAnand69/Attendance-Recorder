@@ -200,33 +200,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Header Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200/90 gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight font-display">
             Attendance Dashboard
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             {classroom.name} · Instructor: {classroom.teacherName}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center space-x-1.5">
-            <label className="text-xs text-zinc-500 font-medium">Date:</label>
+          <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-2xs">
+            <label className="text-xs text-slate-500 font-bold">Date:</label>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-2.5 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-800 focus:outline-none focus:border-zinc-900 transition-colors"
+              className="bg-transparent text-xs text-slate-900 font-mono font-medium focus:outline-none cursor-pointer"
             />
           </div>
 
           <button
+            onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            title="Switch to Today"
+          >
+            Today
+          </button>
+
+          <button
             onClick={handleExportTodayCSV}
-            className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-700 font-medium transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-bold transition-colors cursor-pointer shadow-2xs"
             title="Download CSV for selected date"
           >
-            <Download className="w-3.5 h-3.5 text-zinc-500" />
+            <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>Export CSV</span>
           </button>
 
@@ -234,10 +242,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               onClick={handleBatchAlertAbsentParents}
               disabled={isSendingBatchAlerts}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-medium shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-slate-950 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-50"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>{isSendingBatchAlerts ? "Sending..." : `Email ${absentCount} Absent Parents`}</span>
+              <Send className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{isSendingBatchAlerts ? "Dispatching..." : `Alert ${absentCount} Parents`}</span>
             </button>
           )}
         </div>
@@ -278,41 +286,69 @@ export const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
-            <span className="text-xs font-medium">Total Enrolled</span>
-            <Users className="w-3.5 h-3.5 text-zinc-400" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Enrolled */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-display">Enrolled Roster</span>
+            <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 group-hover:scale-110 transition-transform">
+              <Users className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-semibold text-zinc-900">{totalStudents}</div>
-          <p className="text-[11px] text-zinc-400 mt-0.5">Students on roster</p>
+          <div className="text-3xl font-extrabold text-slate-900 tracking-tight font-display">{totalStudents}</div>
+          <div className="flex items-center space-x-1.5 mt-2 text-[11px] text-slate-500">
+            <span className="w-2 h-2 rounded-full bg-slate-400" />
+            <span>Active classroom candidates</span>
+          </div>
         </div>
 
-        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
-            <span className="text-xs font-medium">Present Today</span>
-            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+        {/* Present Today */}
+        <div className="bg-white border border-emerald-200/80 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="flex items-center justify-between text-emerald-700 mb-2">
+            <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider font-display">Present Today</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 group-hover:scale-110 transition-transform">
+              <UserCheck className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-semibold text-emerald-700">{presentCount}</div>
-          <p className="text-[11px] text-zinc-400 mt-0.5">Verified in class</p>
+          <div className="text-3xl font-extrabold text-emerald-700 tracking-tight font-display">{presentCount}</div>
+          <div className="flex items-center space-x-1.5 mt-2 text-[11px] text-emerald-700 font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Verified in classroom</span>
+          </div>
         </div>
 
-        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
-            <span className="text-xs font-medium">Absent</span>
-            <UserX className="w-3.5 h-3.5 text-red-600" />
+        {/* Absent */}
+        <div className="bg-white border border-red-200/80 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="flex items-center justify-between text-red-700 mb-2">
+            <span className="text-xs font-bold text-red-800 uppercase tracking-wider font-display">Absent Students</span>
+            <div className="w-8 h-8 rounded-xl bg-red-100 flex items-center justify-center text-red-700 group-hover:scale-110 transition-transform">
+              <UserX className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-semibold text-red-700">{absentCount}</div>
-          <p className="text-[11px] text-zinc-400 mt-0.5">Unrecorded presence</p>
+          <div className="text-3xl font-extrabold text-red-700 tracking-tight font-display">{absentCount}</div>
+          <div className="flex items-center space-x-1.5 mt-2 text-[11px] text-red-600 font-semibold">
+            <span className="w-2 h-2 rounded-full bg-red-500" />
+            <span>Pending check-in or alert</span>
+          </div>
         </div>
 
-        <div className="bg-white border border-zinc-200 rounded-xl p-4 shadow-xs">
-          <div className="flex items-center justify-between text-zinc-500 mb-1.5">
-            <span className="text-xs font-medium">Attendance Rate</span>
-            <Activity className="w-3.5 h-3.5 text-zinc-400" />
+        {/* Attendance Rate */}
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-display">Compliance Rate</span>
+            <div className="w-8 h-8 rounded-xl bg-teal-50 flex items-center justify-center text-teal-700 group-hover:scale-110 transition-transform">
+              <Activity className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-2xl font-semibold text-zinc-900">{attendanceRate}%</div>
-          <p className="text-[11px] text-zinc-400 mt-0.5">Daily compliance</p>
+          <div className="text-3xl font-extrabold text-slate-900 tracking-tight font-display">{attendanceRate}%</div>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2.5">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                attendanceRate >= 80 ? "bg-emerald-500" : attendanceRate >= 60 ? "bg-amber-500" : "bg-red-500"
+              }`}
+              style={{ width: `${attendanceRate}%` }}
+            />
+          </div>
         </div>
       </div>
 

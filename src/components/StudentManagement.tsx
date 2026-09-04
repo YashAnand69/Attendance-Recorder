@@ -254,12 +254,12 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-200/90 gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
-            Student Profiles & Roster
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight font-display">
+            Student Profiles &amp; Roster
           </h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Manage biometric face enrollment and student contact records for {className}.
           </p>
         </div>
@@ -267,9 +267,9 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleExportRosterCSV}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-700 font-medium transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-bold transition-colors cursor-pointer shadow-2xs"
           >
-            <Download className="w-3.5 h-3.5 text-zinc-500" />
+            <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>Export Roster</span>
           </button>
 
@@ -278,10 +278,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               setIsRegistering(!isRegistering);
               setErrorMessage(null);
             }}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+            className={`flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm ${
               isRegistering
-                ? "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-                : "bg-zinc-900 hover:bg-zinc-800 text-white"
+                ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                : "bg-slate-950 hover:bg-slate-800 text-white"
             }`}
           >
             {isRegistering ? (
@@ -291,7 +291,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               </>
             ) : (
               <>
-                <UserPlus className="w-3.5 h-3.5" />
+                <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Enroll Student</span>
               </>
             )}

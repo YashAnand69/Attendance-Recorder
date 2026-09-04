@@ -643,10 +643,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         {/* Right Column: Verification Result & Log (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           {/* Active Result Card */}
-          <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-4">
-              <span className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
-                Biometric Scan Result
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wider font-display">
+                Biometric Identification Result
               </span>
               {scanResult && (
                 <span
@@ -656,7 +656,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       : "bg-red-50 text-red-700 border-red-200"
                   }`}
                 >
-                  {scanResult.matched ? `${scanResult.confidence}% Biometric Match` : "No Match Found"}
+                  {scanResult.matched ? `${scanResult.confidence}% AI Confidence` : "Unmatched"}
                 </span>
               )}
             </div>
@@ -665,41 +665,57 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <div className="space-y-4">
                 <div className="flex items-start space-x-3.5">
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${
                       scanResult.matched
-                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                        : "bg-red-100 text-red-700 border border-red-200"
+                        ? "bg-emerald-500 text-white"
+                        : "bg-red-500 text-white"
                     }`}
                   >
                     {scanResult.matched ? (
-                      <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                      <CheckCircle2 className="w-6 h-6 stroke-2" />
                     ) : (
-                      <AlertCircle className="w-6 h-6 text-red-600" />
+                      <AlertCircle className="w-6 h-6 stroke-2" />
                     )}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-zinc-900">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-extrabold text-slate-900 truncate font-display">
                       {scanResult.matched
                         ? scanResult.studentName
-                        : "Unrecognized Biometric Profile"}
+                        : "Biometric Profile Not Recognized"}
                     </h3>
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       {scanResult.matched
                         ? `Roll ${scanResult.rollNumber || "N/A"} · ${scanResult.className || classroom.name}`
-                        : "Face does not match any enrolled student in this classroom."}
+                        : "No matching face found in current classroom roster."}
                     </p>
                   </div>
                 </div>
 
+                {/* Match Confidence Progress Meter */}
+                {scanResult.matched && (
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className="text-slate-700">Biometric Match Quality</span>
+                      <span className="text-emerald-700 font-mono">{scanResult.confidence}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500"
+                        style={{ width: `${scanResult.confidence}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Side-by-side Visual Inspection */}
                 {(lastScannedFrame || (scanResult.matched && scanResult.studentId)) && (
-                  <div className="grid grid-cols-2 gap-2.5 p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                  <div className="grid grid-cols-2 gap-2.5 p-3 bg-slate-50/80 border border-slate-200/80 rounded-xl">
                     {lastScannedFrame && (
                       <div className="space-y-1">
-                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                           Captured Frame
                         </span>
-                        <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
+                        <div className="w-full aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-300 shadow-2xs">
                           <img
                             src={lastScannedFrame}
                             alt="Scanned Live Frame"
@@ -710,10 +726,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                     )}
                     {scanResult.matched && scanResult.studentId && (
                       <div className="space-y-1">
-                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
-                          Enrolled Reference
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                          Enrolled Photo
                         </span>
-                        <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
+                        <div className="w-full aspect-square rounded-xl overflow-hidden bg-slate-950 border border-slate-300 shadow-2xs">
                           {(() => {
                             const matchedStudent = students.find((s) => s.id === scanResult.studentId);
                             return matchedStudent?.faceImageDataUrl ? (
@@ -723,7 +739,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-400">
+                              <div className="w-full h-full flex items-center justify-center text-slate-400">
                                 <User className="w-6 h-6" />
                               </div>
                             );
@@ -732,39 +748,93 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       </div>
                     )}
                     {!scanResult.matched && lastScannedFrame && (
-                      <div className="flex flex-col justify-center space-y-1.5 p-1 text-[11px] text-zinc-600 leading-snug">
-                        <span className="font-bold text-zinc-800">Quick suggestion:</span>
+                      <div className="flex flex-col justify-center space-y-1.5 p-1 text-[11px] text-slate-600 leading-snug">
+                        <span className="font-bold text-slate-800">Troubleshooting:</span>
                         <span>• Center face in optimal lighting.</span>
-                        <span>• Or register new student under "Students" tab.</span>
+                        <span>• Or register student under "Roster".</span>
                       </div>
                     )}
                   </div>
                 )}
 
                 {scanResult.verificationNotes && (
-                  <p className="text-xs text-zinc-700 bg-zinc-50 p-3 rounded-xl border border-zinc-200 leading-relaxed font-mono">
+                  <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed font-mono">
                     {scanResult.verificationNotes}
                   </p>
                 )}
               </div>
             ) : (
-              <div className="py-10 text-center text-zinc-400 space-y-2">
-                <Scan className="w-10 h-10 mx-auto stroke-1 text-zinc-400" />
-                <p className="text-xs font-medium text-zinc-500">Awaiting facial scan input...</p>
-                <p className="text-[11px] text-zinc-400">Look directly into camera or choose test candidate</p>
+              <div className="py-10 text-center text-slate-400 space-y-2">
+                <Scan className="w-10 h-10 mx-auto stroke-1 text-slate-400" />
+                <p className="text-xs font-semibold text-slate-600">Biometric scanner is live &amp; listening</p>
+                <p className="text-[11px] text-slate-400">Position face within reticle or pick a test student</p>
               </div>
             )}
           </div>
 
+          {/* Quick Manual Mark Present Strip */}
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 font-display">
+                Quick Manual Attendance Override
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">1-Click Check-in</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
+              {students.slice(0, 8).map((student) => (
+                <button
+                  key={student.id}
+                  onClick={async () => {
+                    const todayStr = new Date().toISOString().split("T")[0];
+                    const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                    const newRec = await logAttendanceRecord({
+                      studentId: student.id,
+                      studentName: student.name,
+                      rollNumber: student.rollNumber,
+                      className: classroom.name,
+                      date: todayStr,
+                      timestamp: timeStr,
+                      status: "present",
+                      confidence: 100,
+                      latitude: classroom.latitude,
+                      longitude: classroom.longitude,
+                      verificationMethod: "manual",
+                    });
+                    audioFeedback.playSuccessChime();
+                    setLastLoggedStudent(student);
+                    setLastLogTimestamp(timeStr);
+                    onAttendanceLogged(newRec);
+                  }}
+                  className="flex items-center space-x-2 p-2 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 rounded-xl text-left transition-colors cursor-pointer group"
+                >
+                  <img
+                    src={student.faceImageDataUrl}
+                    alt={student.name}
+                    className="w-6 h-6 rounded-full object-cover border border-slate-300 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-900 truncate">
+                      {student.name.split(" ")[0]}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono truncate">{student.rollNumber}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Latest Recorded Entry Card */}
           {lastLoggedStudent && (
-            <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs">
-              <div className="flex items-center justify-between text-xs mb-3">
-                <span className="font-bold text-zinc-900">Latest Recorded Attendance</span>
-                <span className="font-mono text-zinc-500 font-medium">{lastLogTimestamp}</span>
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 shadow-xs">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="font-bold text-emerald-950 flex items-center space-x-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Latest Verified Check-In</span>
+                </span>
+                <span className="font-mono text-emerald-800 font-bold">{lastLogTimestamp}</span>
               </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-11 h-11 rounded-xl bg-zinc-100 border border-zinc-200 overflow-hidden shrink-0 flex items-center justify-center">
+              <div className="flex items-center space-x-3 bg-white p-2.5 rounded-xl border border-emerald-200">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
                   {lastLoggedStudent.faceImageDataUrl ? (
                     <img
                       src={lastLoggedStudent.faceImageDataUrl}
@@ -772,16 +842,16 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <User className="w-5 h-5 text-zinc-400" />
+                    <User className="w-5 h-5 text-slate-400" />
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-zinc-900">{lastLoggedStudent.name}</h4>
-                  <p className="text-[11px] text-zinc-500">
+                  <h4 className="text-xs font-extrabold text-slate-900">{lastLoggedStudent.name}</h4>
+                  <p className="text-[11px] text-slate-500">
                     Roll {lastLoggedStudent.rollNumber} · {lastLoggedStudent.className}
                   </p>
                 </div>
-                <span className="ml-auto text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                <span className="ml-auto text-[10px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
                   Present
                 </span>
               </div>
@@ -789,10 +859,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           )}
 
           {/* Parent Alert Notification Box */}
-          <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs space-y-3">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs space-y-3">
             <div>
-              <h4 className="text-xs font-bold text-zinc-900">Parent Absence Alert Dispatcher</h4>
-              <p className="text-[11px] text-zinc-500">
+              <h4 className="text-xs font-bold text-slate-900 font-display">Parent Absence Alert Dispatcher</h4>
+              <p className="text-[11px] text-slate-500">
                 Send an automated email notification to an absent student's guardian.
               </p>
             </div>
@@ -801,7 +871,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <select
                 value={selectedAbsentStudentId}
                 onChange={(e) => setSelectedAbsentStudentId(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 focus:bg-white focus:outline-none transition-colors"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none transition-colors"
               >
                 {students.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -812,7 +882,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
               <button
                 onClick={handleTriggerParentAlert}
-                className="px-3.5 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl whitespace-nowrap shadow-xs transition-colors cursor-pointer"
+                className="px-3.5 py-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold rounded-xl whitespace-nowrap shadow-xs transition-colors cursor-pointer"
               >
                 Send Alert
               </button>
