@@ -65,3 +65,19 @@ export interface ClassroomVerificationResult {
   maxRadiusMeters: number;
   message: string;
 }
+
+export interface AiAttendanceInsights {
+  overallAttendancePercentage: number;
+  lowAttendanceStudents?: Array<{
+    studentName: string;
+    percentage: number;
+    totalClasses: number;
+    presentCount: number;
+    status: "At Risk" | "Critical";
+  }>;
+  keyInsights: string[];
+  administrativeActionItems: string[];
+  peakArrivalPattern?: string;
+  attendanceForecast?: string;
+}
+

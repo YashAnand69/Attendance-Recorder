@@ -418,11 +418,16 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       {/* Top Header Strip */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-900 tracking-tight">
-            Biometric Attendance Scanner
-          </h2>
+          <div className="flex items-center space-x-2">
+            <h2 className="text-xl font-bold text-zinc-900 tracking-tight">
+              Biometric Attendance Scanner
+            </h2>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              AI Vision 3.7
+            </span>
+          </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Real-time biometric facial recognition and classroom geofence verification
+            Real-time biometric facial recognition and classroom geofence physical verification
           </p>
         </div>
 
@@ -431,29 +436,29 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+            className={`p-2 rounded-xl border text-xs transition-colors cursor-pointer ${
               soundEnabled
                 ? "bg-zinc-100 border-zinc-300 text-zinc-800 hover:bg-zinc-200"
                 : "bg-white border-zinc-200 text-zinc-400 hover:text-zinc-600"
             }`}
             title={soundEnabled ? "Audio chimes active" : "Audio muted"}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
           {/* Continuous Kiosk Mode Toggle */}
           <button
             onClick={() => setIsContinuousMode(!isContinuousMode)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+            className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
               isContinuousMode
-                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs"
                 : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
             }`}
           >
             {isContinuousMode ? (
               <>
                 <Pause className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Auto-Scan Active</span>
+                <span>Auto-Scan Active (Kiosk)</span>
               </>
             ) : (
               <>
@@ -466,10 +471,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           <button
             onClick={() => executeScan()}
             disabled={isScanning || !isCameraActive}
-            className="flex items-center space-x-1.5 px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-medium rounded-lg shadow-xs transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-4 py-2 bg-zinc-950 hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer ring-1 ring-zinc-800"
           >
-            <Sparkles className={`w-3.5 h-3.5 ${isScanning ? "animate-spin" : ""}`} />
-            <span>{isScanning ? "Analyzing..." : "Scan Face"}</span>
+            <Sparkles className={`w-3.5 h-3.5 text-emerald-400 ${isScanning ? "animate-spin" : ""}`} />
+            <span>{isScanning ? "Scanning Face..." : "Capture & Verify"}</span>
           </button>
         </div>
       </div>
@@ -477,10 +482,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       {/* Main Scanner Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Viewport (7 cols) */}
-        <div className="lg:col-span-7 space-y-3">
+        <div className="lg:col-span-7 space-y-4">
           <div
-            className={`relative aspect-4/3 sm:aspect-16/9 bg-zinc-950 rounded-2xl overflow-hidden border transition-all duration-300 shadow-sm flex items-center justify-center ${
-              flashSuccess ? "border-emerald-500 ring-4 ring-emerald-500/20" : "border-zinc-200"
+            className={`relative aspect-4/3 sm:aspect-16/9 bg-zinc-950 rounded-2xl overflow-hidden border transition-all duration-300 shadow-md flex items-center justify-center ${
+              flashSuccess ? "border-emerald-500 ring-4 ring-emerald-500/20" : "border-zinc-900"
             }`}
           >
             {/* Hidden Canvas */}
@@ -495,91 +500,108 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               className="w-full h-full object-cover transform -scale-x-100"
             />
 
-            {/* Optical Framing Reticle */}
+            {/* Futuristic Laser Sweep Animation when scanning */}
+            {isScanning && (
+              <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_15px_#10b981] animate-laser-sweep pointer-events-none z-10" />
+            )}
+
+            {/* Optical Framing Reticle & Target Brackets */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-48 h-48 sm:w-56 sm:h-56 relative">
-                {/* 4 Corner Precision Markers */}
-                <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-white/80 rounded-tl-sm" />
-                <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-white/80 rounded-tr-sm" />
-                <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-white/80 rounded-bl-sm" />
-                <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-white/80 rounded-br-sm" />
+              <div className="w-52 h-52 sm:w-60 sm:h-60 relative">
+                {/* 4 Corner Precision HUD Markers */}
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-emerald-400/90 rounded-tl-lg" />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-emerald-400/90 rounded-tr-lg" />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-emerald-400/90 rounded-bl-lg" />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-emerald-400/90 rounded-br-lg" />
+
+                {/* Center crosshair */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-30">
+                  <div className="w-8 h-8 border border-white/60 rounded-full flex items-center justify-center">
+                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                  </div>
+                </div>
 
                 {/* Face silhouette guide */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-25">
-                  <div className="w-32 h-40 border border-dashed border-white rounded-full" />
+                <div className="absolute inset-0 flex items-center justify-center opacity-30">
+                  <div className="w-36 h-48 border border-dashed border-emerald-300 rounded-full" />
                 </div>
 
                 {isScanning && (
-                  <div className="absolute inset-0 bg-white/10 rounded-sm flex items-center justify-center animate-pulse">
-                    <span className="text-[11px] font-mono font-medium text-white bg-zinc-900/90 px-3 py-1.5 rounded-md border border-zinc-700 shadow-sm">
-                      MATCHING BIOMETRICS...
+                  <div className="absolute inset-0 bg-emerald-950/20 backdrop-blur-[1px] rounded-lg flex flex-col items-center justify-center space-y-1.5 animate-pulse">
+                    <span className="text-[11px] font-mono font-bold tracking-wider text-emerald-300 bg-zinc-950/90 px-3 py-1.5 rounded-lg border border-emerald-500/40 shadow-lg">
+                      ANALYZING BIOMETRIC EMBEDDING
                     </span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Camera & Continuous Status Badges */}
+            {/* Top Left HUD Telemetry */}
             <div className="absolute top-3 left-3 flex items-center space-x-2">
-              <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-zinc-900/80 backdrop-blur-xs border border-zinc-800 text-white rounded-md text-[11px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Live Feed</span>
+              <div className="flex items-center space-x-1.5 px-3 py-1 bg-zinc-950/80 backdrop-blur-md border border-zinc-800 text-white rounded-lg text-[11px] font-medium shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Live Biometric Feed</span>
               </div>
               {isContinuousMode && (
-                <div className="flex items-center space-x-1 px-2 py-1 bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 rounded-md text-[10px] font-medium">
+                <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/90 border border-emerald-600 text-emerald-300 rounded-lg text-[10px] font-bold shadow-xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span>Kiosk Mode (Auto)</span>
+                  <span>Kiosk Auto-Scan</span>
                 </div>
               )}
             </div>
 
-            {/* Geofence Status Badge Top Right */}
-            <div className="absolute top-3 right-3 flex items-center space-x-1.5 px-2.5 py-1 bg-zinc-900/80 backdrop-blur-xs border border-zinc-800 text-white rounded-md text-[11px]">
-              <MapPin className="w-3 h-3 text-zinc-400" />
+            {/* Top Right Geofence Status Badge */}
+            <div className="absolute top-3 right-3 flex items-center space-x-1.5 px-3 py-1 bg-zinc-950/80 backdrop-blur-md border border-zinc-800 text-white rounded-lg text-[11px] font-medium shadow-xs">
+              <MapPin className={`w-3.5 h-3.5 ${isInsideGeofence ? "text-emerald-400" : "text-amber-400"}`} />
               <span>
-                {distance}m ({isInsideGeofence ? "In Boundary" : "Outside"})
+                {distance}m ({isInsideGeofence ? "Geofence Verified" : "Outside Boundary"})
               </span>
             </div>
 
             {/* Camera Error Modal if any */}
             {cameraError && (
-              <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center p-6 text-center z-20">
+              <div className="absolute inset-0 bg-zinc-950/95 flex flex-col items-center justify-center p-6 text-center z-20">
                 <ShieldAlert className="w-10 h-10 text-red-400 mb-2" />
                 <p className="text-xs text-zinc-300 max-w-xs">{cameraError}</p>
                 <button
                   onClick={startCamera}
-                  className="mt-3 px-3 py-1.5 bg-white text-zinc-900 text-xs font-medium rounded-lg hover:bg-zinc-100 transition-colors"
+                  className="mt-3 px-4 py-2 bg-white text-zinc-950 text-xs font-semibold rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
                 >
                   Retry Camera
                 </button>
               </div>
             )}
 
-            {/* Bottom Actions Overlay */}
-            <div className="absolute bottom-3 inset-x-3 flex items-center justify-between px-3 py-2 bg-zinc-900/80 backdrop-blur-xs border border-zinc-800 rounded-xl text-xs text-zinc-300">
-              <span className="text-[11px] text-zinc-400 font-mono">
-                {classroom.name} · Max {classroom.radiusMeters}m
-              </span>
+            {/* Bottom Actions Overlay Bar */}
+            <div className="absolute bottom-3 inset-x-3 flex items-center justify-between px-3.5 py-2 bg-zinc-950/85 backdrop-blur-md border border-zinc-800 rounded-xl text-xs text-zinc-300">
+              <div className="flex items-center space-x-2">
+                <span className="text-[11px] text-zinc-400 font-mono">
+                  {classroom.name} · Radius {classroom.radiusMeters}m
+                </span>
+              </div>
 
-              <button
-                onClick={() => executeScan()}
-                disabled={isScanning || !isCameraActive}
-                className="px-3 py-1 bg-white text-zinc-950 hover:bg-zinc-100 text-xs font-medium rounded-md shadow-xs transition-colors cursor-pointer"
-              >
-                Scan Now
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => executeScan()}
+                  disabled={isScanning || !isCameraActive}
+                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isScanning ? "Processing..." : "Scan Now"}
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Quick Demo Face Tester */}
-          <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-zinc-700 flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-zinc-500" />
-                <span>Test & Simulation Tools</span>
+          {/* Quick Simulation & Test Bar */}
+          <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-xs font-bold text-zinc-900 flex items-center space-x-1.5">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Quick Test &amp; Photo Simulation</span>
               </span>
-              <span className="text-[11px] text-zinc-400">Click profile or upload image</span>
+              <span className="text-[11px] text-zinc-500">Test enrolled students or upload custom image</span>
             </div>
+
             <div className="flex items-center space-x-2 overflow-x-auto pb-1">
               <input
                 type="file"
@@ -591,27 +613,27 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isScanning}
-                className="flex items-center space-x-1.5 px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-xs font-medium shrink-0 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-zinc-950 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shrink-0 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
                 title="Upload custom image to test facial recognition"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Upload Test Photo</span>
               </button>
 
-              {students.slice(0, 6).map((student) => (
+              {students.slice(0, 8).map((student) => (
                 <button
                   key={student.id}
                   onClick={() => executeScan(student.faceImageDataUrl)}
                   disabled={isScanning}
-                  className="flex items-center space-x-1.5 px-2 py-1 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-lg text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex items-center space-x-2 px-2.5 py-1.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
                   title={`Simulate scan for ${student.name}`}
                 >
                   <img
                     src={student.faceImageDataUrl}
                     alt={student.name}
-                    className="w-5 h-5 rounded-full object-cover border border-zinc-200"
+                    className="w-5 h-5 rounded-full object-cover border border-zinc-300"
                   />
-                  <span className="text-zinc-800 font-medium">{student.name.split(" ")[0]}</span>
+                  <span className="text-zinc-800 font-semibold">{student.name.split(" ")[0]}</span>
                 </button>
               ))}
             </div>
@@ -623,14 +645,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           {/* Active Result Card */}
           <div className="bg-white border border-zinc-200 rounded-2xl p-5 shadow-xs">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-4">
-              <span className="text-xs font-semibold text-zinc-900 uppercase tracking-wider">
-                Verification Result
+              <span className="text-xs font-bold text-zinc-900 uppercase tracking-wider">
+                Biometric Scan Result
               </span>
               {scanResult && (
                 <span
-                  className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
                     scanResult.matched
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
                       : "bg-red-50 text-red-700 border-red-200"
                   }`}
                 >
@@ -641,27 +663,27 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
             {scanResult ? (
               <div className="space-y-4">
-                <div className="flex items-start space-x-3">
+                <div className="flex items-start space-x-3.5">
                   <div
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                       scanResult.matched
-                        ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                        : "bg-red-50 text-red-600 border border-red-200"
+                        ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                        : "bg-red-100 text-red-700 border border-red-200"
                     }`}
                   >
                     {scanResult.matched ? (
-                      <CheckCircle2 className="w-5 h-5" />
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600" />
                     ) : (
-                      <AlertCircle className="w-5 h-5" />
+                      <AlertCircle className="w-6 h-6 text-red-600" />
                     )}
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-900">
+                    <h3 className="text-sm font-bold text-zinc-900">
                       {scanResult.matched
                         ? scanResult.studentName
-                        : "Unrecognized Face"}
+                        : "Unrecognized Biometric Profile"}
                     </h3>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-zinc-500 mt-0.5">
                       {scanResult.matched
                         ? `Roll ${scanResult.rollNumber || "N/A"} · ${scanResult.className || classroom.name}`
                         : "Face does not match any enrolled student in this classroom."}
@@ -669,12 +691,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   </div>
                 </div>
 
-                {/* Side-by-side Visual Inspection if available */}
+                {/* Side-by-side Visual Inspection */}
                 {(lastScannedFrame || (scanResult.matched && scanResult.studentId)) && (
-                  <div className="grid grid-cols-2 gap-2 p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl">
+                  <div className="grid grid-cols-2 gap-2.5 p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
                     {lastScannedFrame && (
                       <div className="space-y-1">
-                        <span className="text-[10px] font-medium text-zinc-500 block">Captured Frame</span>
+                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+                          Captured Frame
+                        </span>
                         <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
                           <img
                             src={lastScannedFrame}
@@ -686,7 +710,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                     )}
                     {scanResult.matched && scanResult.studentId && (
                       <div className="space-y-1">
-                        <span className="text-[10px] font-medium text-zinc-500 block">Enrolled Reference</span>
+                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+                          Enrolled Reference
+                        </span>
                         <div className="w-full aspect-square rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300">
                           {(() => {
                             const matchedStudent = students.find((s) => s.id === scanResult.studentId);
@@ -706,38 +732,39 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       </div>
                     )}
                     {!scanResult.matched && lastScannedFrame && (
-                      <div className="flex flex-col justify-center space-y-1.5 p-1 text-[11px] text-zinc-500 leading-snug">
-                        <span className="font-semibold text-zinc-700">Tip to test:</span>
-                        <span>1. Use the enrolled student buttons below, or</span>
-                        <span>2. Register yourself with a clear photo in the Students tab.</span>
+                      <div className="flex flex-col justify-center space-y-1.5 p-1 text-[11px] text-zinc-600 leading-snug">
+                        <span className="font-bold text-zinc-800">Quick suggestion:</span>
+                        <span>• Center face in optimal lighting.</span>
+                        <span>• Or register new student under "Students" tab.</span>
                       </div>
                     )}
                   </div>
                 )}
 
                 {scanResult.verificationNotes && (
-                  <p className="text-xs text-zinc-600 bg-zinc-50 p-2.5 rounded-lg border border-zinc-100 leading-relaxed">
+                  <p className="text-xs text-zinc-700 bg-zinc-50 p-3 rounded-xl border border-zinc-200 leading-relaxed font-mono">
                     {scanResult.verificationNotes}
                   </p>
                 )}
               </div>
             ) : (
-              <div className="py-8 text-center text-zinc-400 space-y-2">
-                <Scan className="w-8 h-8 mx-auto stroke-1" />
-                <p className="text-xs">No active scan performed yet</p>
+              <div className="py-10 text-center text-zinc-400 space-y-2">
+                <Scan className="w-10 h-10 mx-auto stroke-1 text-zinc-400" />
+                <p className="text-xs font-medium text-zinc-500">Awaiting facial scan input...</p>
+                <p className="text-[11px] text-zinc-400">Look directly into camera or choose test candidate</p>
               </div>
             )}
           </div>
 
-          {/* Last Recorded Attendance Entry */}
+          {/* Latest Recorded Entry Card */}
           {lastLoggedStudent && (
             <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs">
               <div className="flex items-center justify-between text-xs mb-3">
-                <span className="font-semibold text-zinc-900">Latest Recorded Entry</span>
-                <span className="font-mono text-zinc-500">{lastLogTimestamp}</span>
+                <span className="font-bold text-zinc-900">Latest Recorded Attendance</span>
+                <span className="font-mono text-zinc-500 font-medium">{lastLogTimestamp}</span>
               </div>
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 overflow-hidden shrink-0 flex items-center justify-center">
+                <div className="w-11 h-11 rounded-xl bg-zinc-100 border border-zinc-200 overflow-hidden shrink-0 flex items-center justify-center">
                   {lastLoggedStudent.faceImageDataUrl ? (
                     <img
                       src={lastLoggedStudent.faceImageDataUrl}
@@ -749,24 +776,24 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-semibold text-zinc-900">{lastLoggedStudent.name}</h4>
+                  <h4 className="text-xs font-bold text-zinc-900">{lastLoggedStudent.name}</h4>
                   <p className="text-[11px] text-zinc-500">
                     Roll {lastLoggedStudent.rollNumber} · {lastLoggedStudent.className}
                   </p>
                 </div>
-                <span className="ml-auto text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                <span className="ml-auto text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                   Present
                 </span>
               </div>
             </div>
           )}
 
-          {/* Send Unexcused Absence Alert Notice */}
+          {/* Parent Alert Notification Box */}
           <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-xs space-y-3">
             <div>
-              <h4 className="text-xs font-semibold text-zinc-900">Parent Absence Notification</h4>
+              <h4 className="text-xs font-bold text-zinc-900">Parent Absence Alert Dispatcher</h4>
               <p className="text-[11px] text-zinc-500">
-                Dispatch an instant unexcused absence alert email to a student's parent/guardian.
+                Send an automated email notification to an absent student's guardian.
               </p>
             </div>
 
@@ -774,7 +801,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <select
                 value={selectedAbsentStudentId}
                 onChange={(e) => setSelectedAbsentStudentId(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs text-zinc-800 focus:bg-white focus:outline-none transition-colors"
+                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 focus:bg-white focus:outline-none transition-colors"
               >
                 {students.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -785,14 +812,16 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
               <button
                 onClick={handleTriggerParentAlert}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg whitespace-nowrap shadow-xs transition-colors cursor-pointer"
+                className="px-3.5 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl whitespace-nowrap shadow-xs transition-colors cursor-pointer"
               >
                 Send Alert
               </button>
             </div>
 
             {parentAlertStatus && (
-              <p className="text-[11px] text-emerald-700 font-medium">{parentAlertStatus}</p>
+              <p className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                {parentAlertStatus}
+              </p>
             )}
           </div>
         </div>
@@ -800,4 +829,5 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     </div>
   );
 };
+
 
