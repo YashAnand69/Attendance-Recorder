@@ -14,6 +14,7 @@ import {
 import { db } from "./firebase";
 import { Student, Classroom, AttendanceRecord, ParentAlert, FacialRecognitionResult, ClassroomVerificationResult } from "../types";
 import { INITIAL_STUDENTS, DEFAULT_CLASSROOM, INITIAL_ATTENDANCE_RECORDS } from "./mockData";
+import { recognizeFaceFromDataUrl } from "./faceRecognition";
 
 const STUDENTS_COLLECTION = "students";
 const CLASSROOMS_COLLECTION = "classrooms";
@@ -22,6 +23,37 @@ const ALERTS_COLLECTION = "parent_alerts";
 
 const LOCAL_STORAGE_OFFLINE_QUEUE_KEY = "smart_attendance_offline_queue_v1";
 const LOCAL_STORAGE_STUDENTS_KEY = "smart_attendance_students_cache_v2";
+const LOCAL_STORAGE_ATTENDANCE_KEY = "smart_attendance_records_cache_v1";
+
+function readLocalAttendance(): AttendanceRecord[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_ATTENDANCE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalAttendance(records: AttendanceRecord[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_ATTENDANCE_KEY, JSON.stringify(records));
+  } catch (error) {
+    console.warn("Failed to update local attendance cache:", error);
+  }
+}
+
+function mergeAttendanceRecords(records: AttendanceRecord[]): AttendanceRecord[] {
+  return Array.from(new Map(records.map((record) => [`${record.date}:${record.studentId}`, record])).values()).sort((a, b) =>
+    b.timestamp.localeCompare(a.timestamp),
+  );
+}
+
+function recordsForDate(dateFilter: string): AttendanceRecord[] {
+  const localRecords = readLocalAttendance().filter((record) => record.date === dateFilter);
+  const seededRecords = INITIAL_ATTENDANCE_RECORDS.filter((record) => record.date === dateFilter);
+  const queuedRecords = getOfflineQueue().filter((record) => record.date === dateFilter);
+  return mergeAttendanceRecords([...seededRecords, ...localRecords, ...queuedRecords]);
+}
 
 // -------------------------------------------------------------
 // Offline Queue Management
@@ -89,7 +121,10 @@ export async function seedInitialDataIfNeeded(): Promise<void> {
 // -------------------------------------------------------------
 export async function fetchStudents(): Promise<Student[]> {
   try {
-    const querySnapshot = await getDocs(collection(db, STUDENTS_COLLECTION));
+    const querySnapshot = await Promise.race([
+      getDocs(collection(db, STUDENTS_COLLECTION)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Student sync timed out")), 3500)),
+    ]);
     const students: Student[] = [];
     querySnapshot.forEach((docSnap) => {
       students.push(docSnap.data() as Student);
@@ -196,28 +231,59 @@ export function subscribeToAttendance(
 
         // Merge offline queued records for current date
         const offlineQueue = getOfflineQueue().filter((r) => r.date === dateFilter);
-        const combined = [...records];
+        const combined = [...records, ...readLocalAttendance().filter((record) => record.date === dateFilter)];
         offlineQueue.forEach((offRec) => {
           if (!combined.some((c) => c.id === offRec.id)) {
             combined.push(offRec);
           }
         });
 
-        callback(combined);
+        const merged = mergeAttendanceRecords(combined);
+        saveLocalAttendance(mergeAttendanceRecords([...readLocalAttendance(), ...records]));
+        callback(merged);
       },
       (error) => {
         console.warn("Real-time listener offline mode:", error);
-        callback(INITIAL_ATTENDANCE_RECORDS);
+        callback(recordsForDate(dateFilter));
       }
     );
   } catch (e) {
-    callback(INITIAL_ATTENDANCE_RECORDS);
+    callback(recordsForDate(dateFilter));
+    return () => {};
+  }
+}
+
+export function subscribeToAllAttendance(callback: (records: AttendanceRecord[]) => void) {
+  try {
+    return onSnapshot(
+      collection(db, ATTENDANCE_COLLECTION),
+      (snapshot) => {
+        const cloudRecords: AttendanceRecord[] = [];
+        snapshot.forEach((docSnap) => cloudRecords.push(docSnap.data() as AttendanceRecord));
+        const merged = mergeAttendanceRecords([
+          ...INITIAL_ATTENDANCE_RECORDS,
+          ...cloudRecords,
+          ...readLocalAttendance(),
+          ...getOfflineQueue(),
+        ]);
+        saveLocalAttendance(merged);
+        callback(merged);
+      },
+      (error) => {
+        console.warn("All-attendance listener offline mode:", error);
+        callback(mergeAttendanceRecords([...readLocalAttendance(), ...getOfflineQueue(), ...INITIAL_ATTENDANCE_RECORDS]));
+      },
+    );
+  } catch (error) {
+    console.warn("Could not subscribe to all attendance records:", error);
+    callback(mergeAttendanceRecords([...readLocalAttendance(), ...getOfflineQueue(), ...INITIAL_ATTENDANCE_RECORDS]));
     return () => {};
   }
 }
 
 export async function logAttendanceRecord(record: Omit<AttendanceRecord, "id" | "syncedOffline">): Promise<AttendanceRecord> {
-  const newId = `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  // One document per student per date prevents duplicate scans from creating conflicting rows.
+  const newId = `att-${record.date}-${record.studentId}`;
   const isOnline = navigator.onLine;
 
   const fullRecord: AttendanceRecord = {
@@ -225,6 +291,9 @@ export async function logAttendanceRecord(record: Omit<AttendanceRecord, "id" | 
     id: newId,
     syncedOffline: !isOnline,
   };
+
+  const localRecords = readLocalAttendance().filter((item) => item.id !== newId);
+  saveLocalAttendance([...localRecords, fullRecord]);
 
   if (isOnline) {
     try {
@@ -267,6 +336,15 @@ export async function syncOfflineQueueToCloud(): Promise<number> {
   }
 
   saveOfflineQueue(remainingQueue);
+  saveLocalAttendance(
+    mergeAttendanceRecords(
+      readLocalAttendance().map((record) =>
+        queue.some((item) => item.id === record.id && !remainingQueue.some((pending) => pending.id === item.id))
+          ? { ...record, syncedOffline: false }
+          : record,
+      ),
+    ),
+  );
   return syncedCount;
 }
 
@@ -292,7 +370,7 @@ export async function sendParentAbsentAlert(
       }),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
     const alertRecord: ParentAlert = {
       id: `alert-${Date.now()}`,
@@ -310,7 +388,7 @@ export async function sendParentAbsentAlert(
       await setDoc(doc(db, ALERTS_COLLECTION, alertRecord.id), alertRecord);
     } catch (err) {}
 
-    return { success: data.success, alert: alertRecord };
+    return { success: Boolean(data.success), alert: alertRecord };
   } catch (error) {
     console.error("Failed to send parent alert:", error);
     return { success: false };
@@ -384,24 +462,7 @@ export async function runFacialScan(
   captureBase64: string,
   candidateStudents: Student[]
 ): Promise<FacialRecognitionResult> {
-  const rasterizedCandidates = await ensureRasterStudentImages(candidateStudents);
-
-  const res = await fetch("/api/facial-recognition", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      captureBase64,
-      studentsCandidates: rasterizedCandidates,
-    }),
-  });
-
-  if (!res.ok) {
-    const errData = await res.json();
-    throw new Error(errData.error || "Facial recognition service unavailable.");
-  }
-
-  const data = await res.json();
-  return data.result;
+  return recognizeFaceFromDataUrl(captureBase64, candidateStudents);
 }
 
 // -------------------------------------------------------------
@@ -412,22 +473,24 @@ export async function verifyClassroomLocation(
   userLng: number,
   classRoom: Classroom
 ): Promise<ClassroomVerificationResult> {
-  const res = await fetch("/api/verify-classroom-location", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userLat,
-      userLng,
-      classLat: classRoom.latitude,
-      classLng: classRoom.longitude,
-      maxRadiusMeters: classRoom.radiusMeters,
-    }),
-  });
+  const earthRadiusMeters = 6371e3;
+  const lat1 = (userLat * Math.PI) / 180;
+  const lat2 = (classRoom.latitude * Math.PI) / 180;
+  const deltaLat = ((classRoom.latitude - userLat) * Math.PI) / 180;
+  const deltaLng = ((classRoom.longitude - userLng) * Math.PI) / 180;
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  const distanceMeters = earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  const roundedDistance = Math.round(distanceMeters * 10) / 10;
+  const isPresentInClassroom = distanceMeters <= classRoom.radiusMeters;
 
-  if (!res.ok) {
-    const errData = await res.json();
-    throw new Error(errData.error || "Location verification service unavailable.");
-  }
-
-  return await res.json();
+  return {
+    isPresentInClassroom,
+    distanceMeters: roundedDistance,
+    maxRadiusMeters: classRoom.radiusMeters,
+    message: isPresentInClassroom
+      ? `Location verified within classroom boundary (${Math.round(distanceMeters)}m away).`
+      : `Outside classroom boundary (${Math.round(distanceMeters)}m away; ${classRoom.radiusMeters}m allowed).`,
+  };
 }

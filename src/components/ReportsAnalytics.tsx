@@ -29,6 +29,8 @@ import {
   Calendar,
   Layers,
 } from "lucide-react";
+import { buildLocalAttendanceInsights } from "../lib/localInsights";
+import { getLocalDateKey } from "../lib/dateUtils";
 
 interface ReportsAnalyticsProps {
   students: Student[];
@@ -41,15 +43,28 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
   records,
   classroom,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState("August 2026");
+  const [selectedMonth, setSelectedMonth] = useState(getLocalDateKey().slice(0, 7));
   const [totalSchoolDays, setTotalSchoolDays] = useState(20);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiInsights, setAiInsights] = useState<any | null>(null);
+  const [insightSource, setInsightSource] = useState<"local" | "ai">("local");
+
+  const monthLabel = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    return year && month
+      ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1))
+      : selectedMonth;
+  }, [selectedMonth]);
+
+  const monthRecords = useMemo(
+    () => records.filter((record) => record.date.startsWith(selectedMonth)),
+    [records, selectedMonth],
+  );
 
   // Compute monthly student attendance percentages
   const summaries: MonthlyStudentSummary[] = useMemo(
-    () => calculateMonthlySummaries(students, records, totalSchoolDays),
-    [students, records, totalSchoolDays]
+    () => calculateMonthlySummaries(students, monthRecords, totalSchoolDays),
+    [students, monthRecords, totalSchoolDays]
   );
 
   const overallClassPercentage =
@@ -115,17 +130,19 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           students,
-          logs: records,
+          logs: monthRecords,
           month: selectedMonth,
         }),
       });
 
       const data = await res.json();
-      if (data.success) {
-        setAiInsights(data.insights);
-      }
-    } catch (e) {
-      console.error("AI Insights error:", e);
+      if (!res.ok || !data.success) throw new Error("AI service unavailable");
+      setInsightSource("ai");
+      setAiInsights(data.insights);
+    } catch {
+      // Reports remain useful on a static deployment without a Gemini secret.
+      setInsightSource("local");
+      setAiInsights(buildLocalAttendanceInsights(students, monthRecords, totalSchoolDays));
     } finally {
       setIsGeneratingAi(false);
     }
@@ -144,7 +161,20 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-1.5 bg-zinc-50 border border-zinc-200 px-2.5 py-1 rounded-lg text-xs">
+            <span className="text-zinc-500">Month:</span>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                setAiInsights(null);
+              }}
+              className="bg-transparent text-zinc-900 font-medium focus:outline-none"
+              aria-label="Report month"
+            />
+          </div>
           <div className="flex items-center space-x-1.5 bg-zinc-50 border border-zinc-200 px-2.5 py-1 rounded-lg text-xs">
             <span className="text-zinc-500">School Days:</span>
             <input
@@ -302,9 +332,9 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
               <Sparkles className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
-              <h3 className="font-bold text-zinc-900 text-sm">Gemini AI Attendance Intelligence</h3>
+              <h3 className="font-bold text-zinc-900 text-sm">Attendance Intelligence</h3>
               <p className="text-[11px] text-zinc-500">
-                Automated pattern discovery, chronic absenteeism risk forecasting &amp; intervention planning
+                Local insights are always available; Gemini adds richer pattern discovery when configured.
               </p>
             </div>
           </div>
@@ -340,7 +370,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                   </p>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  AI Evaluated
+                  {insightSource === "ai" ? "AI Evaluated" : "Local Summary"}
                 </span>
               </div>
             )}
@@ -411,7 +441,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
         ) : (
           <div className="p-6 text-center bg-zinc-50 border border-dashed border-zinc-200 rounded-xl space-y-2">
             <Sparkles className="w-6 h-6 text-zinc-400 mx-auto" />
-            <p className="text-xs font-semibold text-zinc-700">No AI analysis generated for {selectedMonth} yet.</p>
+            <p className="text-xs font-semibold text-zinc-700">No analysis generated for {monthLabel} yet.</p>
             <p className="text-[11px] text-zinc-500 max-w-md mx-auto">
               Click "Generate AI Intelligence" above to evaluate daily trends, physical geofence verification compliance, and tailored student action plans.
             </p>
@@ -507,4 +537,3 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
     </div>
   );
 };
-

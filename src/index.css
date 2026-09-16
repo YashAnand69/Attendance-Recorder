@@ -8,11 +8,24 @@
   }
 
   body {
-    background-color: #f8fafc;
+    min-width: 320px;
+    background:
+      radial-gradient(circle at 10% -10%, rgba(16, 185, 129, 0.12), transparent 28rem),
+      radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.08), transparent 24rem),
+      #f8fafc;
     color: #0f172a;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  button, input, select {
+    font: inherit;
+  }
+
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid rgba(16, 185, 129, 0.35);
+    outline-offset: 2px;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -23,6 +36,10 @@
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
+}
+
+.app-shell {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.88) 0%, rgba(241, 245, 249, 0.72) 100%);
 }
 
 @keyframes pulse-subtle {
@@ -105,4 +122,3 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
-

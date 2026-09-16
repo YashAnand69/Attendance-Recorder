@@ -51,9 +51,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [selectedSnapshot, setSelectedSnapshot] = useState<{ name: string; url: string; time: string; confidence: number } | null>(null);
 
-  // Map student attendance status for selected date
+  // Keep the dashboard scoped to its selected date while reports can consume the full history.
+  const recordsForSelectedDate = records.filter((record) => record.date === selectedDate);
   const studentStatusMap = new Map<string, AttendanceRecord>();
-  records.forEach((r) => {
+  recordsForSelectedDate.forEach((r) => {
     studentStatusMap.set(r.studentId, r);
   });
 
@@ -566,4 +567,3 @@ export const Dashboard: React.FC<DashboardProps> = ({
     </div>
   );
 };
-

@@ -15,8 +15,6 @@ export const LocationConfigModal: React.FC<LocationConfigModalProps> = ({
   onClose,
   onSaveClassroom,
 }) => {
-  if (!isOpen) return null;
-
   const [name, setName] = useState(classroom.name);
   const [teacherName, setTeacherName] = useState(classroom.teacherName);
   const [latitude, setLatitude] = useState(classroom.latitude.toString());
@@ -24,6 +22,18 @@ export const LocationConfigModal: React.FC<LocationConfigModalProps> = ({
   const [radiusMeters, setRadiusMeters] = useState(classroom.radiusMeters.toString());
   const [isDetectingGps, setIsDetectingGps] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setName(classroom.name);
+    setTeacherName(classroom.teacherName);
+    setLatitude(classroom.latitude.toString());
+    setLongitude(classroom.longitude.toString());
+    setRadiusMeters(classroom.radiusMeters.toString());
+    setStatusMessage(null);
+  }, [classroom, isOpen]);
+
+  if (!isOpen) return null;
 
   const handleGetCurrentGps = () => {
     if (!navigator.geolocation) {

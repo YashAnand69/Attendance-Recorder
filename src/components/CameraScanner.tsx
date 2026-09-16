@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Student, Classroom, AttendanceRecord, FacialRecognitionResult, ClassroomVerificationResult } from "../types";
 import { runFacialScan, verifyClassroomLocation, logAttendanceRecord, sendParentAbsentAlert } from "../lib/attendanceStore";
+import { warmFaceRecognition } from "../lib/faceRecognition";
 import { audioFeedback } from "../lib/audio";
 import confetti from "canvas-confetti";
 import {
@@ -46,6 +47,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [isContinuousMode, setIsContinuousMode] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [faceEngineState, setFaceEngineState] = useState<"loading" | "ready" | "error">("loading");
 
   // Verification states
   const [scanResult, setScanResult] = useState<FacialRecognitionResult | null>(null);
@@ -122,6 +124,25 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     };
   }, []);
 
+  // Load the on-device model and pre-compute enrolled descriptors once per roster.
+  // This moves the expensive work off the scan button for consistently fast check-ins.
+  useEffect(() => {
+    let cancelled = false;
+    setFaceEngineState("loading");
+    warmFaceRecognition(students)
+      .then(() => {
+        if (!cancelled) setFaceEngineState("ready");
+      })
+      .catch((error) => {
+        console.warn("On-device face model could not be prepared:", error);
+        if (!cancelled) setFaceEngineState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [students]);
+
   // Sync sound settings
   useEffect(() => {
     audioFeedback.setSoundEnabled(soundEnabled);
@@ -151,33 +172,54 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Fast helper to resize & compress image payloads for sub-second AI inference
   const compressFrame = async (dataUrl: string): Promise<string> => {
+    // Enrolled photos can be remote URLs. Keep them intact so a cross-origin canvas
+    // restriction never stalls the scan flow; camera captures are already data URLs.
+    if (!dataUrl.startsWith("data:")) return dataUrl;
+
     return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const maxDim = 380;
-        let width = img.width;
-        let height = img.height;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.75));
-          return;
-        }
-        resolve(dataUrl);
+      let settled = false;
+      const finish = (value: string) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
       };
-      img.onerror = () => resolve(dataUrl);
+      const timeout = window.setTimeout(() => finish(dataUrl), 1800);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const maxDim = 380;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            window.clearTimeout(timeout);
+            finish(canvas.toDataURL("image/jpeg", 0.75));
+            return;
+          }
+        } catch {
+          // A remote reference photo may not be canvas-readable; use the original URL.
+        }
+        window.clearTimeout(timeout);
+        finish(dataUrl);
+      };
+      img.onerror = () => {
+        window.clearTimeout(timeout);
+        finish(dataUrl);
+      };
       img.src = dataUrl;
     });
   };
@@ -423,12 +465,27 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               Biometric Attendance Scanner
             </h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              AI Vision 3.7
+              On-device Face ID
             </span>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Real-time biometric facial recognition and classroom geofence physical verification
+            Local face matching, classroom presence verification, and offline-first attendance logging
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${
+              faceEngineState === "ready"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : faceEngineState === "error"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-slate-200 bg-slate-100 text-slate-600"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                faceEngineState === "ready" ? "bg-emerald-500" : faceEngineState === "error" ? "bg-amber-500" : "bg-slate-400 animate-pulse"
+              }`} />
+              {faceEngineState === "ready" ? "Face engine ready" : faceEngineState === "error" ? "Face engine needs attention" : "Preparing face engine…"}
+            </span>
+            <span className="text-slate-500">Runs in this browser · no frame upload required</span>
+          </div>
         </div>
 
         {/* Controls: Continuous Mode & Sound Toggle */}
@@ -899,5 +956,3 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     </div>
   );
 };
-
-

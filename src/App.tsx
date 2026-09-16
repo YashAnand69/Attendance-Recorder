@@ -3,31 +3,46 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { lazy, Suspense, useState, useEffect, useCallback } from "react";
 import { Student, Classroom, AttendanceRecord } from "./types";
 import {
   fetchStudents,
-  subscribeToAttendance,
+  subscribeToAllAttendance,
   seedInitialDataIfNeeded,
   getOfflineQueue,
   syncOfflineQueueToCloud,
 } from "./lib/attendanceStore";
 import { DEFAULT_CLASSROOM } from "./lib/mockData";
+import { getLocalDateKey } from "./lib/dateUtils";
 import { Header } from "./components/Header";
-import { CameraScanner } from "./components/CameraScanner";
-import { Dashboard } from "./components/Dashboard";
-import { StudentManagement } from "./components/StudentManagement";
-import { ReportsAnalytics } from "./components/ReportsAnalytics";
-import { LocationConfigModal } from "./components/LocationConfigModal";
-import { AdminLoginModal } from "./components/AdminLoginModal";
-import { ShieldCheck, Lock, Unlock, LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
+
+const CameraScanner = lazy(() => import("./components/CameraScanner").then((module) => ({ default: module.CameraScanner })));
+const Dashboard = lazy(() => import("./components/Dashboard").then((module) => ({ default: module.Dashboard })));
+const StudentManagement = lazy(() => import("./components/StudentManagement").then((module) => ({ default: module.StudentManagement })));
+const ReportsAnalytics = lazy(() => import("./components/ReportsAnalytics").then((module) => ({ default: module.ReportsAnalytics })));
+const LocationConfigModal = lazy(() => import("./components/LocationConfigModal").then((module) => ({ default: module.LocationConfigModal })));
+const AdminLoginModal = lazy(() => import("./components/AdminLoginModal").then((module) => ({ default: module.AdminLoginModal })));
+
+const CLASSROOM_CACHE_KEY = "smart_attendance_classroom_v1";
+
+function getStoredClassroom(): Classroom {
+  try {
+    const cached = localStorage.getItem(CLASSROOM_CACHE_KEY);
+    if (cached) return { ...DEFAULT_CLASSROOM, ...JSON.parse(cached) };
+  } catch {
+    // Fall through to the safe demo classroom when storage is unavailable.
+  }
+  return DEFAULT_CLASSROOM;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"scanner" | "dashboard" | "students" | "reports">("scanner");
   const [students, setStudents] = useState<Student[]>([]);
-  const [classroom, setClassroom] = useState<Classroom>(DEFAULT_CLASSROOM);
+  const [classroom, setClassroom] = useState<Classroom>(getStoredClassroom);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateKey());
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Admin Mode & Password Protection State
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
@@ -115,28 +130,36 @@ export default function App() {
   // Load Students and Seed Database
   useEffect(() => {
     const initApp = async () => {
-      await seedInitialDataIfNeeded();
-      const loadedStudents = await fetchStudents();
-      setStudents(loadedStudents);
-      refreshOfflineQueueCount();
+      try {
+        // Keep the first paint fast on a slow connection; the local cache is the immediate source of truth.
+        await Promise.race([
+          seedInitialDataIfNeeded(),
+          new Promise((resolve) => setTimeout(resolve, 2200)),
+        ]);
+        const loadedStudents = await fetchStudents();
+        setStudents(loadedStudents);
+      } finally {
+        refreshOfflineQueueCount();
+        setIsInitializing(false);
+      }
     };
 
     initApp();
   }, [refreshOfflineQueueCount]);
 
-  // Subscribe to real-time attendance logs for selected date
+  // Subscribe once to the full attendance stream so dashboard and monthly reports stay truthful.
   useEffect(() => {
-    const unsubscribe = subscribeToAttendance(selectedDate, (newRecords) => {
+    const unsubscribe = subscribeToAllAttendance((newRecords) => {
       setRecords(newRecords);
       refreshOfflineQueueCount();
     });
 
     return () => unsubscribe();
-  }, [selectedDate, refreshOfflineQueueCount]);
+  }, [refreshOfflineQueueCount]);
 
   // Sync Offline Queue manually
   const handleSyncOfflineQueue = async () => {
-    const syncedCount = await syncOfflineQueueToCloud();
+    await syncOfflineQueueToCloud();
     refreshOfflineQueueCount();
     // Refresh student records
     const updatedStudents = await fetchStudents();
@@ -156,8 +179,17 @@ export default function App() {
     refreshOfflineQueueCount();
   };
 
+  const handleSaveClassroom = (updatedClassroom: Classroom) => {
+    setClassroom(updatedClassroom);
+    try {
+      localStorage.setItem(CLASSROOM_CACHE_KEY, JSON.stringify(updatedClassroom));
+    } catch {
+      // Classroom settings still apply for the current session if storage is blocked.
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans antialiased selection:bg-zinc-900 selection:text-white">
+    <div className="app-shell min-h-screen text-zinc-900 font-sans antialiased selection:bg-slate-900 selection:text-white">
       {/* Application Navigation Bar */}
       <Header
         activeTab={activeTab}
@@ -176,6 +208,7 @@ export default function App() {
         isAdminUnlocked={isAdminUnlocked}
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
         onLockAdmin={handleLockAdmin}
+        totalStudentsCount={students.length}
       />
 
       {/* Admin Mode Bar Banner if Unlocked */}
@@ -199,67 +232,77 @@ export default function App() {
       )}
 
       {/* Main Container Viewport */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === "scanner" && (
-          <CameraScanner
-            students={students}
-            classroom={classroom}
-            onAttendanceLogged={handleAttendanceLogged}
-            isOnline={isOnline}
-          />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {isInitializing && (
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
+            <span>Loading your classroom roster… local mode is ready while cloud sync connects.</span>
+          </div>
         )}
+        <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-slate-200 bg-white/70 text-sm text-slate-500 shadow-sm">Loading workspace…</div>}>
+          {activeTab === "scanner" && (
+            <CameraScanner
+              students={students}
+              classroom={classroom}
+              onAttendanceLogged={handleAttendanceLogged}
+              isOnline={isOnline}
+            />
+          )}
 
-        {activeTab === "dashboard" && (
-          <Dashboard
-            students={students}
-            records={records}
-            classroom={classroom}
-            isOnline={isOnline}
-            offlineQueueCount={offlineQueueCount}
-            onSyncOfflineQueue={handleSyncOfflineQueue}
-            selectedDate={selectedDate}
-            setSelectedDate={setSelectedDate}
-            onRecordUpdated={() => {
-              refreshOfflineQueueCount();
-            }}
-          />
-        )}
+          {activeTab === "dashboard" && (
+            <Dashboard
+              students={students}
+              records={records}
+              classroom={classroom}
+              isOnline={isOnline}
+              offlineQueueCount={offlineQueueCount}
+              onSyncOfflineQueue={handleSyncOfflineQueue}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              onRecordUpdated={() => {
+                refreshOfflineQueueCount();
+              }}
+            />
+          )}
 
-        {activeTab === "students" && (
-          <StudentManagement
-            students={students}
-            onStudentAdded={handleStudentAdded}
-            onStudentDeleted={handleStudentDeleted}
-            className={classroom.name}
-          />
-        )}
+          {activeTab === "students" && (
+            <StudentManagement
+              students={students}
+              onStudentAdded={handleStudentAdded}
+              onStudentDeleted={handleStudentDeleted}
+              className={classroom.name}
+            />
+          )}
 
-        {activeTab === "reports" && (
-          <ReportsAnalytics
-            students={students}
-            records={records}
-            classroom={classroom}
-          />
-        )}
+          {activeTab === "reports" && (
+            <ReportsAnalytics
+              students={students}
+              records={records}
+              classroom={classroom}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Admin Login Modal */}
-      <AdminLoginModal
-        isOpen={isAdminModalOpen}
-        onClose={() => {
-          setIsAdminModalOpen(false);
-          setPendingTab(null);
-        }}
-        onSuccess={handleAdminSuccess}
-      />
+      <Suspense fallback={null}>
+        <AdminLoginModal
+          isOpen={isAdminModalOpen}
+          onClose={() => {
+            setIsAdminModalOpen(false);
+            setPendingTab(null);
+          }}
+          onSuccess={handleAdminSuccess}
+        />
 
-      {/* Classroom Geofence Location Configuration Modal */}
-      <LocationConfigModal
-        classroom={classroom}
-        isOpen={isLocationModalOpen}
-        onClose={() => setIsLocationModalOpen(false)}
-        onSaveClassroom={(updatedClassroom) => setClassroom(updatedClassroom)}
-      />
+        {/* Classroom Geofence Location Configuration Modal */}
+        <LocationConfigModal
+          classroom={classroom}
+          isOpen={isLocationModalOpen}
+          onClose={() => setIsLocationModalOpen(false)}
+          onSaveClassroom={handleSaveClassroom}
+        />
+      </Suspense>
     </div>
   );
 }
