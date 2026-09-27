@@ -1,6 +1,7 @@
+import { env } from "./_shared/env.js";
 import { GoogleGenAI } from "@google/genai";
 
-import { guard } from './_shared/auth';
+import { guard } from './_shared/auth.js';
 export default async (request: Request) => {
   const denied = guard(request);
   if (denied) return denied;
@@ -8,7 +9,7 @@ export default async (request: Request) => {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const apiKey = Netlify.env.get("GEMINI_API_KEY");
+  const apiKey = env("GEMINI_API_KEY");
   if (!apiKey) {
     return Response.json({ success: false, configured: false, error: "Gemini is not configured for this site." }, { status: 503 });
   }

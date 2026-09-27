@@ -1,0 +1,7 @@
+server.ts
+database/
+tests/
+docs/
+.env*
+dist/
+.netlify/

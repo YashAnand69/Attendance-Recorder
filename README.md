@@ -1,5 +1,9 @@
 # Attendly — Fast, private classroom attendance
 
+## Fresh Vercel deployment
+
+The Vercel target uses protected Vercel Functions and a fresh private Blob store, with no Netlify data migration. See [the Vercel database guide](docs/VERCEL-DATABASE.md). The Netlify configuration remains available as a separate hosting adapter.
+
 ## Version 2 workspace
 
 The redesign adds a responsive sidebar, attendance overview, separate demo mode, protected cloud access, persistent offline mutations, and storage/backup controls. Read [the upgrade and database guide](docs/DATABASE-AND-UPGRADE.md) for architecture, privacy behavior, verification and current limitations.

@@ -393,7 +393,7 @@ export default function App() {
                     <h2>Storage & synchronization</h2>
                     <p>
                       {cloud
-                        ? "Netlify Blobs · attendly-attendance"
+                        ? (import.meta.env.VITE_STORAGE_LABEL || "Netlify Blobs · attendly-attendance")
                         : "Demo data · this browser only"}
                     </p>
                     <dl>

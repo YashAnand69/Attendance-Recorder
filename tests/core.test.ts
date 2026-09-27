@@ -7,6 +7,31 @@ import { calculateMonthlySummaries } from "../src/lib/exportUtils";
 import { authenticated, sign, guard } from "../netlify/functions/_shared/auth";
 import session from "../netlify/functions/session";
 import { buildLocalAttendanceInsights } from "../src/lib/localInsights";
+import { createAttendanceHandler, type RecordStore } from "../server/attendance-handler";
+
+test("shared data API requires login and validates persistent record writes", async () => {
+  const docs = new Map<string, unknown>();
+  const adapter: RecordStore = {
+    async list({prefix}) { return {blobs: [...docs.keys()].filter(k => k.startsWith(prefix)).map(key=>({key}))}; },
+    async get(key) { return docs.get(key) ?? null; },
+    async setJSON(key, value) { docs.set(key, value); },
+    async delete(key) { docs.delete(key); },
+  };
+  const handle = createAttendanceHandler(() => adapter);
+  assert.equal((await handle(new Request("https://example.com/api/attendance-data"))).status, 401);
+  const expiry = String(Date.now() + 100000);
+  const cookie = "attendly_session=" + expiry + "." + sign(expiry);
+  const call = (method: string, body?: unknown) => handle(new Request("https://example.com/api/attendance-data", {
+    method, headers: {cookie, "content-type": "application/json"}, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+  }));
+  const record = {id: "stu-test", name: "Test", rollNumber: "TEST-1"};
+  assert.equal((await call("POST", {collection: "students", action: "upsert", id: record.id, data: record})).status, 200);
+  assert.equal((await (await call("GET")).json()).students[0].name, "Test");
+  assert.equal((await call("POST", null)).status, 400);
+  assert.equal((await call("POST", {collection: "students", action: "upsert", id: "../bad", data: record})).status, 400);
+  assert.equal((await call("POST", {collection: "students", action: "delete", id: record.id})).status, 200);
+  assert.equal((await (await call("GET")).json()).students.length, 0);
+});
 const password = "test-only-strong-password";
 Object.assign(globalThis, {
   Netlify: {

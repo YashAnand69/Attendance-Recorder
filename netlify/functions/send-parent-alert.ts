@@ -1,3 +1,4 @@
+import { env } from "./_shared/env.js";
 type ParentAlertRequest = {
   studentName: string;
   rollNumber?: string;
@@ -7,7 +8,7 @@ type ParentAlertRequest = {
   reason?: string;
 };
 
-import { guard } from './_shared/auth';
+import { guard } from './_shared/auth.js';
 export default async (request: Request) => {
   const denied = guard(request);
   if (denied) return denied;
@@ -20,8 +21,8 @@ export default async (request: Request) => {
     return Response.json({ error: "studentName, parentEmail, and date are required" }, { status: 400 });
   }
 
-  const apiKey = Netlify.env.get("RESEND_API_KEY");
-  const fromEmail = Netlify.env.get("ATTENDANCE_FROM_EMAIL");
+  const apiKey = env("RESEND_API_KEY");
+  const fromEmail = env("ATTENDANCE_FROM_EMAIL");
   if (!apiKey || !fromEmail) {
     return Response.json(
       { success: false, configured: false, error: "Email delivery is not configured for this site." },

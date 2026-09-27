@@ -1,9 +1,10 @@
+import { env } from "./env.js";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const cookieName = "attendly_session";
 export const maxAge = 43200;
 export function sign(value: string) {
-  const secret = Netlify.env.get("ATTENDLY_SESSION_SECRET");
+  const secret = env("ATTENDLY_SESSION_SECRET");
   if (!secret) throw new Error("Login is not configured.");
   return createHmac("sha256", secret).update(value).digest("hex");
 }

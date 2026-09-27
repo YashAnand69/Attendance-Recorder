@@ -1,5 +1,6 @@
+import { env } from "./_shared/env.js";
 import { createHash } from "node:crypto";
-import { authenticated, cookieName, equal, maxAge, sign } from "./_shared/auth";
+import { authenticated, cookieName, equal, maxAge, sign } from "./_shared/auth.js";
 import type { Config } from "@netlify/functions";
 
 const attempts = new Map<string, { count: number; reset: number }>();
@@ -9,7 +10,7 @@ export default async (req: Request) => {
     return Response.json(
       {
         authenticated: authenticated(req),
-        configured: Boolean(Netlify.env.get("ATTENDLY_PASSWORD_HASH")),
+        configured: Boolean(env("ATTENDLY_PASSWORD_HASH")),
       },
       { headers },
     );
@@ -22,7 +23,7 @@ export default async (req: Request) => {
     return Response.json({ authenticated: false }, { headers });
   }
   if (req.method !== "POST") return new Response(null, { status: 405 });
-  const hash = Netlify.env.get("ATTENDLY_PASSWORD_HASH");
+  const hash = env("ATTENDLY_PASSWORD_HASH");
   if (!hash)
     return Response.json(
       { error: "Administrator login has not been configured." },

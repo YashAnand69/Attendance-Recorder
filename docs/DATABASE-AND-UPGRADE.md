@@ -1,5 +1,7 @@
 # Attendly v2 — upgrade and database guide
 
+> Historical Netlify deployment notes. The new Vercel workspace starts fresh in private Vercel Blob storage. See [VERCEL-DATABASE.md](VERCEL-DATABASE.md) for its current architecture; the Netlify records remain untouched.
+
 ## Oracle SQL/PLSQL module in this repository
 
 The newer database/ directory is preserved. It is a separate Oracle 19c+/Oracle Database Free academic implementation, with CLASSROOMS, STUDENTS, CLASS_SESSIONS, ATTENDANCE, PARENT_ALERTS and ATTENDANCE_AUDIT tables. It includes relationships/constraints, attendance stored procedures/functions, a MERGE upsert flow, geofence logic and an attendance audit trigger.
