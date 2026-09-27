@@ -1,365 +1,365 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  setDoc,
-  deleteDoc,
-  addDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  where,
-  Timestamp,
-} from "firebase/firestore";
-import { db } from "./firebase";
-import { Student, Classroom, AttendanceRecord, ParentAlert, FacialRecognitionResult, ClassroomVerificationResult } from "../types";
-import { INITIAL_STUDENTS, DEFAULT_CLASSROOM, INITIAL_ATTENDANCE_RECORDS } from "./mockData";
+import type {
+  Student,
+  Classroom,
+  AttendanceRecord,
+  ParentAlert,
+} from "../types";
+import { INITIAL_STUDENTS, DEFAULT_CLASSROOM } from "./mockData";
 import { recognizeFaceFromDataUrl } from "./faceRecognition";
-
-const STUDENTS_COLLECTION = "students";
-const CLASSROOMS_COLLECTION = "classrooms";
-const ATTENDANCE_COLLECTION = "attendance_logs";
-const ALERTS_COLLECTION = "parent_alerts";
-
-const LOCAL_STORAGE_OFFLINE_QUEUE_KEY = "smart_attendance_offline_queue_v1";
-const LOCAL_STORAGE_STUDENTS_KEY = "smart_attendance_students_cache_v2";
-const LOCAL_STORAGE_ATTENDANCE_KEY = "smart_attendance_records_cache_v1";
-
-function readLocalAttendance(): AttendanceRecord[] {
+import { getLocalDateKey } from "./dateUtils";
+export type Workspace = {
+  students: Student[];
+  classrooms: Classroom[];
+  attendance: AttendanceRecord[];
+  alerts: ParentAlert[];
+};
+type Mutation = {
+  collection: string;
+  action: "upsert" | "delete";
+  id: string;
+  data?: any;
+  version: string;
+};
+export type SyncStatus = {
+  mode: "demo" | "cloud";
+  pending: number;
+  state: "idle" | "syncing" | "saved" | "error";
+  message: string;
+  lastSync: string | null;
+};
+let authenticated = false;
+let state: Workspace = demoState();
+let status: SyncStatus = {
+  mode: "demo",
+  pending: 0,
+  state: "idle",
+  message: "Demo workspace · saved on this device",
+  lastSync: null,
+};
+const listeners = new Set<() => void>();
+let syncing: Promise<number> | null = null;
+let revision = 0;
+const cacheKey = () =>
+  authenticated ? "attendly_cloud_v4" : "attendly_demo_v4";
+const queueKey = "attendly_pending_v4";
+const notify = () => listeners.forEach((fn) => fn());
+function read<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_ATTENDANCE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return JSON.parse(localStorage.getItem(key) || "null") ?? fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
-
-function saveLocalAttendance(records: AttendanceRecord[]): void {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_ATTENDANCE_KEY, JSON.stringify(records));
-  } catch (error) {
-    console.warn("Failed to update local attendance cache:", error);
-  }
+function persist() {
+  localStorage.setItem(cacheKey(), JSON.stringify(state));
+  status = { ...status, pending: authenticated ? queue().length : 0 };
+  notify();
 }
-
-function mergeAttendanceRecords(records: AttendanceRecord[]): AttendanceRecord[] {
-  return Array.from(new Map(records.map((record) => [`${record.date}:${record.studentId}`, record])).values()).sort((a, b) =>
-    b.timestamp.localeCompare(a.timestamp),
-  );
+function queue(): Mutation[] {
+  return read(queueKey, []);
 }
-
-function recordsForDate(dateFilter: string): AttendanceRecord[] {
-  const localRecords = readLocalAttendance().filter((record) => record.date === dateFilter);
-  const seededRecords = INITIAL_ATTENDANCE_RECORDS.filter((record) => record.date === dateFilter);
-  const queuedRecords = getOfflineQueue().filter((record) => record.date === dateFilter);
-  return mergeAttendanceRecords([...seededRecords, ...localRecords, ...queuedRecords]);
+function saveQueue(items: Mutation[]) {
+  localStorage.setItem(queueKey, JSON.stringify(items));
 }
-
-// -------------------------------------------------------------
-// Offline Queue Management
-// -------------------------------------------------------------
-export function getOfflineQueue(): AttendanceRecord[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_OFFLINE_QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-export function saveOfflineQueue(queue: AttendanceRecord[]): void {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-  } catch (e) {
-    console.error("Failed to write to local offline queue", e);
-  }
-}
-
-// -------------------------------------------------------------
-// Initialize Default Database Seed (if empty)
-// -------------------------------------------------------------
-export async function seedInitialDataIfNeeded(): Promise<void> {
-  try {
-    const isSeeded = localStorage.getItem("smart_attendance_seeded_v2");
-    if (isSeeded) return;
-
-    const studentsSnap = await getDocs(collection(db, STUDENTS_COLLECTION));
-    if (studentsSnap.empty) {
-      console.log("Seeding Firestore with initial students...");
-      for (const student of INITIAL_STUDENTS) {
-        await setDoc(doc(db, STUDENTS_COLLECTION, student.id), student);
-      }
-      localStorage.setItem("smart_attendance_seeded_v2", "true");
-    } else {
-      // Check if any existing student has old SVG avatar and upgrade to realistic headshot
-      studentsSnap.forEach(async (docSnap) => {
-        const data = docSnap.data() as Student;
-        if (data.faceImageDataUrl && data.faceImageDataUrl.includes("image/svg")) {
-          const matchInitial = INITIAL_STUDENTS.find((s) => s.id === data.id);
-          if (matchInitial) {
-            await setDoc(doc(db, STUDENTS_COLLECTION, data.id), {
-              ...data,
-              faceImageDataUrl: matchInitial.faceImageDataUrl,
-            });
-          }
-        }
+function demoState(): Workspace {
+  const students = INITIAL_STUDENTS.slice(0, 5);
+  const attendance: AttendanceRecord[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    students.forEach((s, n) => {
+      if (i === 0 && n > 2) return;
+      attendance.push({
+        id: `att-${getLocalDateKey(d)}-${s.id}`,
+        studentId: s.id,
+        studentName: s.name,
+        rollNumber: s.rollNumber,
+        className: s.className,
+        date: getLocalDateKey(d),
+        timestamp: `09:${String(3 + n * 4).padStart(2, "0")}`,
+        status:
+          n === 2 ? "late" : i % 3 === 0 && n === 4 ? "absent" : "present",
+        confidence: 0,
+        latitude: 0,
+        longitude: 0,
+        verificationMethod: "manual",
+        syncedOffline: false,
       });
-      localStorage.setItem("smart_attendance_seeded_v2", "true");
-    }
-
-    const classSnap = await getDocs(collection(db, CLASSROOMS_COLLECTION));
-    if (classSnap.empty) {
-      await setDoc(doc(db, CLASSROOMS_COLLECTION, DEFAULT_CLASSROOM.id), DEFAULT_CLASSROOM);
-    }
-  } catch (error) {
-    console.warn("Firestore seed note (may be offline or starting up):", error);
-  }
-}
-
-// -------------------------------------------------------------
-// Student Operations
-// -------------------------------------------------------------
-export async function fetchStudents(): Promise<Student[]> {
-  try {
-    const querySnapshot = await Promise.race([
-      getDocs(collection(db, STUDENTS_COLLECTION)),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Student sync timed out")), 3500)),
-    ]);
-    const students: Student[] = [];
-    querySnapshot.forEach((docSnap) => {
-      students.push(docSnap.data() as Student);
     });
-    // Cache locally
-    localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(students));
-    return students;
-  } catch (e) {
-    console.warn("Offline fallback for student retrieval", e);
   }
-
-  // Fallback to local storage cache or initial mock data
-  try {
-    const cached = localStorage.getItem(LOCAL_STORAGE_STUDENTS_KEY);
-    if (cached !== null) return JSON.parse(cached);
-  } catch (err) {}
-
-  return INITIAL_STUDENTS;
+  return { students, attendance, classrooms: [DEFAULT_CLASSROOM], alerts: [] };
 }
-
-export async function addStudent(studentData: Omit<Student, "id" | "createdAt" | "status">): Promise<Student> {
-  const newId = `stu-${Date.now()}`;
-  const newStudent: Student = {
-    ...studentData,
-    id: newId,
-    status: "active",
-    createdAt: new Date().toISOString(),
+export function getWorkspace() {
+  return state;
+}
+export function getSyncStatus() {
+  return status;
+}
+export function subscribeWorkspace(fn: () => void) {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
   };
-
-  try {
-    await setDoc(doc(db, STUDENTS_COLLECTION, newId), newStudent);
-  } catch (error: any) {
-    console.error("Firestore write for new student profile failed:", error);
-    if (navigator.onLine) {
-      throw new Error(error?.message || "Failed to save student profile to cloud database.");
-    }
-  }
-
-  // Update local cache safely
-  try {
-    const cachedRaw = localStorage.getItem(LOCAL_STORAGE_STUDENTS_KEY);
-    let currentStudents: Student[] = [];
-    if (cachedRaw) {
-      try {
-        currentStudents = JSON.parse(cachedRaw);
-      } catch (e) {
-        currentStudents = INITIAL_STUDENTS;
-      }
-    } else {
-      currentStudents = INITIAL_STUDENTS;
-    }
-
-    const updatedList = [newStudent, ...currentStudents.filter(s => s.id !== newId)];
-    localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(updatedList));
-  } catch (err) {
-    console.warn("Failed to update local cache for student:", err);
-  }
-
-  return newStudent;
 }
-
-export async function deleteStudent(studentId: string): Promise<void> {
-  try {
-    await deleteDoc(doc(db, STUDENTS_COLLECTION, studentId));
-  } catch (error) {
-    console.warn("Firestore delete failed for student:", error);
-  }
-
-  try {
-    const cached = localStorage.getItem(LOCAL_STORAGE_STUDENTS_KEY);
-    let current: Student[] = [];
-    if (cached) {
-      current = JSON.parse(cached);
-    } else {
-      current = INITIAL_STUDENTS;
-    }
-    const filtered = current.filter((s) => s.id !== studentId);
-    localStorage.setItem(LOCAL_STORAGE_STUDENTS_KEY, JSON.stringify(filtered));
-  } catch (err) {
-    console.warn("Failed to update local cache on student deletion:", err);
-  }
+export function isCloudWorkspace() {
+  return authenticated;
 }
-
-// -------------------------------------------------------------
-// Attendance Record Operations & Real-Time Sync
-// -------------------------------------------------------------
-export function subscribeToAttendance(
-  dateFilter: string,
-  callback: (records: AttendanceRecord[]) => void
-) {
+export async function api(path: string, init: RequestInit = {}) {
+  const res = await fetch(path, {
+    ...init,
+    credentials: "same-origin",
+    signal: AbortSignal.timeout(12000),
+    headers: { "Content-Type": "application/json", ...init.headers },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+export async function initializeWorkspace() {
+  revision++;
   try {
-    const q = query(
-      collection(db, ATTENDANCE_COLLECTION),
-      where("date", "==", dateFilter)
-    );
-
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const records: AttendanceRecord[] = [];
-        snapshot.forEach((docSnap) => {
-          records.push(docSnap.data() as AttendanceRecord);
-        });
-
-        // Merge offline queued records for current date
-        const offlineQueue = getOfflineQueue().filter((r) => r.date === dateFilter);
-        const combined = [...records, ...readLocalAttendance().filter((record) => record.date === dateFilter)];
-        offlineQueue.forEach((offRec) => {
-          if (!combined.some((c) => c.id === offRec.id)) {
-            combined.push(offRec);
-          }
-        });
-
-        const merged = mergeAttendanceRecords(combined);
-        saveLocalAttendance(mergeAttendanceRecords([...readLocalAttendance(), ...records]));
-        callback(merged);
-      },
-      (error) => {
-        console.warn("Real-time listener offline mode:", error);
-        callback(recordsForDate(dateFilter));
-      }
-    );
-  } catch (e) {
-    callback(recordsForDate(dateFilter));
-    return () => {};
+    authenticated = (await api("/api/session")).authenticated === true;
+    if (!authenticated) localStorage.removeItem("attendly_offline_until");
+  } catch {
+    authenticated =
+      !navigator.onLine &&
+      Number(localStorage.getItem("attendly_offline_until")) > Date.now();
   }
-}
-
-export function subscribeToAllAttendance(callback: (records: AttendanceRecord[]) => void) {
-  try {
-    return onSnapshot(
-      collection(db, ATTENDANCE_COLLECTION),
-      (snapshot) => {
-        const cloudRecords: AttendanceRecord[] = [];
-        snapshot.forEach((docSnap) => cloudRecords.push(docSnap.data() as AttendanceRecord));
-        const merged = mergeAttendanceRecords([
-          ...INITIAL_ATTENDANCE_RECORDS,
-          ...cloudRecords,
-          ...readLocalAttendance(),
-          ...getOfflineQueue(),
-        ]);
-        saveLocalAttendance(merged);
-        callback(merged);
-      },
-      (error) => {
-        console.warn("All-attendance listener offline mode:", error);
-        callback(mergeAttendanceRecords([...readLocalAttendance(), ...getOfflineQueue(), ...INITIAL_ATTENDANCE_RECORDS]));
-      },
-    );
-  } catch (error) {
-    console.warn("Could not subscribe to all attendance records:", error);
-    callback(mergeAttendanceRecords([...readLocalAttendance(), ...getOfflineQueue(), ...INITIAL_ATTENDANCE_RECORDS]));
-    return () => {};
-  }
-}
-
-export async function logAttendanceRecord(record: Omit<AttendanceRecord, "id" | "syncedOffline">): Promise<AttendanceRecord> {
-  // One document per student per date prevents duplicate scans from creating conflicting rows.
-  const newId = `att-${record.date}-${record.studentId}`;
-  const isOnline = navigator.onLine;
-
-  const fullRecord: AttendanceRecord = {
-    ...record,
-    id: newId,
-    syncedOffline: !isOnline,
-  };
-
-  const localRecords = readLocalAttendance().filter((item) => item.id !== newId);
-  saveLocalAttendance([...localRecords, fullRecord]);
-
-  if (isOnline) {
-    try {
-      await setDoc(doc(db, ATTENDANCE_COLLECTION, newId), fullRecord);
-    } catch (e) {
-      console.warn("Cloud write failed, adding to offline queue", e);
-      fullRecord.syncedOffline = true;
-      const queue = getOfflineQueue();
-      queue.push(fullRecord);
-      saveOfflineQueue(queue);
-    }
-  } else {
-    // Save to offline queue
-    const queue = getOfflineQueue();
-    queue.push(fullRecord);
-    saveOfflineQueue(queue);
-  }
-
-  return fullRecord;
-}
-
-// Flush pending offline queue to Firestore when back online
-export async function syncOfflineQueueToCloud(): Promise<number> {
-  if (!navigator.onLine) return 0;
-
-  const queue = getOfflineQueue();
-  if (queue.length === 0) return 0;
-
-  let syncedCount = 0;
-  const remainingQueue: AttendanceRecord[] = [];
-
-  for (const item of queue) {
-    try {
-      const syncedItem = { ...item, syncedOffline: false };
-      await setDoc(doc(db, ATTENDANCE_COLLECTION, item.id), syncedItem);
-      syncedCount++;
-    } catch (e) {
-      remainingQueue.push(item);
-    }
-  }
-
-  saveOfflineQueue(remainingQueue);
-  saveLocalAttendance(
-    mergeAttendanceRecords(
-      readLocalAttendance().map((record) =>
-        queue.some((item) => item.id === record.id && !remainingQueue.some((pending) => pending.id === item.id))
-          ? { ...record, syncedOffline: false }
-          : record,
-      ),
-    ),
+  state = read(
+    cacheKey(),
+    authenticated
+      ? { students: [], attendance: [], classrooms: [], alerts: [] }
+      : demoState(),
   );
-  return syncedCount;
+  status = {
+    ...status,
+    mode: authenticated ? "cloud" : "demo",
+    state: "idle",
+    message: authenticated
+      ? "Connecting to your workspace…"
+      : "Demo workspace · saved on this device",
+  };
+  notify();
+  if (authenticated) {
+    await syncOfflineQueueToCloud();
+    await refreshWorkspace();
+  }
 }
-
-// -------------------------------------------------------------
-// Parent Alert Email Trigger
-// -------------------------------------------------------------
+export async function login(password: string) {
+  await api("/api/session", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+  localStorage.setItem("attendly_offline_until", String(Date.now() + 43200000));
+  await initializeWorkspace();
+}
+export async function logout() {
+  await api("/api/session", { method: "DELETE" });
+  revision++;
+  localStorage.removeItem("attendly_offline_until");
+  authenticated = false;
+  localStorage.removeItem("attendly_cloud_v4");
+  state = read(cacheKey(), demoState());
+  status = {
+    mode: "demo",
+    pending: 0,
+    state: "idle",
+    message: "Demo workspace · saved on this device",
+    lastSync: null,
+  };
+  notify();
+}
+function applyMutation(target: Workspace, mutation: Mutation) {
+  const field = (
+    {
+      students: "students",
+      classrooms: "classrooms",
+      attendance_logs: "attendance",
+      parent_alerts: "alerts",
+    } as Record<string, string>
+  )[mutation.collection];
+  if (!field) return;
+  const records = (target as any)[field].filter(
+    (item: any) => item.id !== mutation.id,
+  );
+  (target as any)[field] =
+    mutation.action === "delete" ? records : [...records, mutation.data];
+}
+export async function refreshWorkspace() {
+  if (!authenticated || syncing) return;
+  const startedAtRevision = revision;
+  try {
+    const fresh: Workspace = await api("/api/attendance-data");
+    if (!authenticated || startedAtRevision !== revision) return;
+    queue().forEach((m) => applyMutation(fresh, m));
+    state = fresh;
+    status = {
+      ...status,
+      state: "saved",
+      message: queue().length ? "Changes waiting to sync" : "All changes saved",
+      lastSync: new Date().toISOString(),
+    };
+    persist();
+  } catch (error) {
+    status = { ...status, state: "error", message: (error as Error).message };
+    notify();
+  }
+}
+async function mutate(
+  collection: string,
+  action: "upsert" | "delete",
+  id: string,
+  data?: any,
+) {
+  revision++;
+  const mutation: Mutation = {
+    collection,
+    action,
+    id,
+    data,
+    version: crypto.randomUUID(),
+  };
+  if (authenticated)
+    saveQueue([
+      ...queue().filter((m) => m.id !== id || m.collection !== collection),
+      mutation,
+    ]);
+  const next = structuredClone(state);
+  applyMutation(next, mutation);
+  localStorage.setItem(cacheKey(), JSON.stringify(next));
+  state = next;
+  status = {
+    ...status,
+    pending: authenticated ? queue().length : 0,
+    message: authenticated
+      ? "Saving changes…"
+      : "Demo change saved on this device",
+  };
+  notify();
+  if (authenticated) void syncOfflineQueueToCloud();
+}
+export function getOfflineQueue(): AttendanceRecord[] {
+  return queue()
+    .filter((m) => m.collection === "attendance_logs" && m.action === "upsert")
+    .map((m) => m.data);
+}
+export function getPendingSyncCount() {
+  return authenticated ? queue().length : 0;
+}
+export async function syncOfflineQueueToCloud(): Promise<number> {
+  if (!authenticated || !navigator.onLine) return 0;
+  if (syncing) return syncing;
+  syncing = (async () => {
+    let count = 0;
+    status = { ...status, state: "syncing" };
+    notify();
+    try {
+      for (const m of queue()) {
+        await api("/api/attendance-data", {
+          method: "POST",
+          body: JSON.stringify(m),
+        });
+        saveQueue(queue().filter((current) => current.version !== m.version));
+        count++;
+      }
+      status = {
+        ...status,
+        state: "saved",
+        pending: queue().length,
+        lastSync: new Date().toISOString(),
+        message: queue().length
+          ? "Changes waiting to sync"
+          : "All changes saved",
+      };
+    } catch (error) {
+      status = {
+        ...status,
+        state: "error",
+        pending: queue().length,
+        message: (error as Error).message,
+      };
+    }
+    notify();
+    return count;
+  })();
+  try {
+    return await syncing;
+  } finally {
+    syncing = null;
+  }
+}
+export async function fetchStudents() {
+  return state.students;
+}
+export async function fetchClassroom() {
+  return state.classrooms[0] || null;
+}
+export async function saveClassroom(value: Classroom) {
+  await mutate("classrooms", "upsert", value.id, value);
+}
+export async function seedInitialDataIfNeeded() {}
+export async function addStudent(
+  value: Omit<Student, "id" | "createdAt" | "status">,
+) {
+  if (!value.name.trim() || !value.rollNumber.trim())
+    throw new Error("Name and roll number are required.");
+  if (
+    state.students.some(
+      (s) =>
+        s.rollNumber.trim().toLowerCase() ===
+        value.rollNumber.trim().toLowerCase(),
+    )
+  )
+    throw new Error("This roll number is already enrolled.");
+  const student: Student = {
+    ...value,
+    name: value.name.trim(),
+    rollNumber: value.rollNumber.trim(),
+    id: "stu-" + crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    status: "active",
+  };
+  await mutate("students", "upsert", student.id, student);
+  return student;
+}
+export async function deleteStudent(id: string) {
+  await mutate("students", "delete", id);
+}
+export async function logAttendanceRecord(
+  value: Omit<AttendanceRecord, "id" | "syncedOffline">,
+) {
+  const record: AttendanceRecord = {
+    ...value,
+    id: `att-${value.date}-${value.studentId}`,
+    syncedOffline: authenticated && !navigator.onLine,
+  };
+  delete record.snapshotUrl;
+  await mutate("attendance_logs", "upsert", record.id, record);
+  return record;
+}
+export function subscribeToAllAttendance(
+  callback: (records: AttendanceRecord[]) => void,
+) {
+  callback(state.attendance);
+  return subscribeWorkspace(() => callback(state.attendance));
+}
+export function subscribeToAttendance(
+  date: string,
+  callback: (records: AttendanceRecord[]) => void,
+) {
+  return subscribeToAllAttendance((records) =>
+    callback(records.filter((r) => r.date === date)),
+  );
+}
 export async function sendParentAbsentAlert(
   student: Student,
   date: string,
-  reason: string = "Physical Absence Logged"
+  reason = "Attendance update",
 ): Promise<{ success: boolean; alert?: ParentAlert }> {
+  if (!authenticated) return { success: false };
   try {
-    const res = await fetch("/api/send-parent-alert", {
+    const response = await api("/api/send-parent-alert", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         studentName: student.name,
         rollNumber: student.rollNumber,
@@ -369,128 +369,53 @@ export async function sendParentAbsentAlert(
         reason,
       }),
     });
-
-    const data = await res.json().catch(() => ({}));
-
-    const alertRecord: ParentAlert = {
-      id: `alert-${Date.now()}`,
+    const alert: ParentAlert = {
+      id: "alert-" + crypto.randomUUID(),
       studentId: student.id,
       studentName: student.name,
       parentEmail: student.parentEmail,
       date,
-      status: data.success ? "sent" : "failed",
+      status: "sent",
       sentAt: new Date().toISOString(),
-      message: data.preview || `Alert dispatched to ${student.parentEmail}`,
+      message: reason,
     };
-
-    // Save alert log to Firestore
-    try {
-      await setDoc(doc(db, ALERTS_COLLECTION, alertRecord.id), alertRecord);
-    } catch (err) {}
-
-    return { success: Boolean(data.success), alert: alertRecord };
-  } catch (error) {
-    console.error("Failed to send parent alert:", error);
+    await mutate("parent_alerts", "upsert", alert.id, alert);
+    return { success: response.success, alert };
+  } catch {
     return { success: false };
   }
 }
-
-// Helper to safely prepare student face images for AI multi-modal comparison
-export async function ensureRasterStudentImages(students: Student[]): Promise<Student[]> {
-  if (typeof window === "undefined") return students;
-
-  try {
-    const processed = await Promise.all(
-      students.map(async (student) => {
-        const rawUrl = student.faceImageDataUrl || "";
-        if (!rawUrl || (!rawUrl.includes("image/svg") && !rawUrl.includes("<svg"))) {
-          return student;
-        }
-
-        try {
-          const rasterJpeg = await new Promise<string>((resolve) => {
-            const timeout = setTimeout(() => resolve(rawUrl), 600);
-            try {
-              const img = new Image();
-              img.crossOrigin = "anonymous";
-              img.onload = () => {
-                clearTimeout(timeout);
-                try {
-                  const canvas = document.createElement("canvas");
-                  canvas.width = 240;
-                  canvas.height = 240;
-                  const ctx = canvas.getContext("2d");
-                  if (ctx) {
-                    ctx.fillStyle = "#1e293b";
-                    ctx.fillRect(0, 0, 240, 240);
-                    ctx.drawImage(img, 0, 0, 240, 240);
-                    resolve(canvas.toDataURL("image/jpeg", 0.8));
-                  } else {
-                    resolve(rawUrl);
-                  }
-                } catch {
-                  resolve(rawUrl);
-                }
-              };
-              img.onerror = () => {
-                clearTimeout(timeout);
-                resolve(rawUrl);
-              };
-              img.src = rawUrl;
-            } catch {
-              clearTimeout(timeout);
-              resolve(rawUrl);
-            }
-          });
-
-          return { ...student, faceImageDataUrl: rasterJpeg };
-        } catch {
-          return student;
-        }
-      })
-    );
-    return processed;
-  } catch {
-    return students;
-  }
+export async function ensureRasterStudentImages(students: Student[]) {
+  return students;
 }
-
-// -------------------------------------------------------------
-// Facial Recognition Scanner API Client
-// -------------------------------------------------------------
-export async function runFacialScan(
-  captureBase64: string,
-  candidateStudents: Student[]
-): Promise<FacialRecognitionResult> {
-  return recognizeFaceFromDataUrl(captureBase64, candidateStudents);
-}
-
-// -------------------------------------------------------------
-// Geolocation Physical Presence Verification API Client
-// -------------------------------------------------------------
+export const runFacialScan = recognizeFaceFromDataUrl;
 export async function verifyClassroomLocation(
-  userLat: number,
-  userLng: number,
-  classRoom: Classroom
-): Promise<ClassroomVerificationResult> {
-  const earthRadiusMeters = 6371e3;
-  const lat1 = (userLat * Math.PI) / 180;
-  const lat2 = (classRoom.latitude * Math.PI) / 180;
-  const deltaLat = ((classRoom.latitude - userLat) * Math.PI) / 180;
-  const deltaLng = ((classRoom.longitude - userLng) * Math.PI) / 180;
-  const haversine =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
-  const distanceMeters = earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-  const roundedDistance = Math.round(distanceMeters * 10) / 10;
-  const isPresentInClassroom = distanceMeters <= classRoom.radiusMeters;
-
+  lat: number,
+  lng: number,
+  room: Classroom,
+) {
+  if (
+    ![lat, lng, room.latitude, room.longitude, room.radiusMeters].every(
+      Number.isFinite,
+    )
+  )
+    throw new Error("Valid location is required.");
+  const rad = (v: number) => (v * Math.PI) / 180;
+  const a =
+    Math.sin(rad(room.latitude - lat) / 2) ** 2 +
+    Math.cos(rad(lat)) *
+      Math.cos(rad(room.latitude)) *
+      Math.sin(rad(room.longitude - lng) / 2) ** 2;
+  const distanceMeters = Math.round(
+    6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)),
+  );
   return {
-    isPresentInClassroom,
-    distanceMeters: roundedDistance,
-    maxRadiusMeters: classRoom.radiusMeters,
-    message: isPresentInClassroom
-      ? `Location verified within classroom boundary (${Math.round(distanceMeters)}m away).`
-      : `Outside classroom boundary (${Math.round(distanceMeters)}m away; ${classRoom.radiusMeters}m allowed).`,
+    distanceMeters,
+    maxRadiusMeters: room.radiusMeters,
+    isPresentInClassroom: distanceMeters <= room.radiusMeters,
+    message:
+      distanceMeters <= room.radiusMeters
+        ? "Location verified"
+        : "Outside classroom boundary",
   };
 }

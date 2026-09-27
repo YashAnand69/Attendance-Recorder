@@ -71,11 +71,12 @@ export const LocationConfigModal: React.FC<LocationConfigModalProps> = ({
       ...classroom,
       name,
       teacherName,
-      latitude: parseFloat(latitude) || classroom.latitude,
-      longitude: parseFloat(longitude) || classroom.longitude,
-      radiusMeters: parseInt(radiusMeters, 10) || 50,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      radiusMeters: Number(radiusMeters),
     };
 
+    if (![updated.latitude,updated.longitude,updated.radiusMeters].every(Number.isFinite) || Math.abs(updated.latitude)>90 || Math.abs(updated.longitude)>180 || updated.radiusMeters<=0) { setStatusMessage({type:"error",text:"Enter valid coordinates and a radius greater than zero."}); return; }
     onSaveClassroom(updated);
     onClose();
   };

@@ -1,3 +1,4 @@
+import { getLocalDateKey } from "../lib/dateUtils";
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Student, Classroom, AttendanceRecord, FacialRecognitionResult, ClassroomVerificationResult } from "../types";
 import { runFacialScan, verifyClassroomLocation, logAttendanceRecord, sendParentAbsentAlert } from "../lib/attendanceStore";
@@ -82,6 +83,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         audio: false,
       });
 
+      if (!videoRef.current) { stream.getTracks().forEach(track=>track.stop()); return; }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -157,12 +159,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         },
         (err) => {
           console.warn("Geolocation fallback:", err);
-          setUserCoords({ lat: classroom.latitude, lng: classroom.longitude });
+          setUserCoords(null);
         },
         { enableHighAccuracy: true, timeout: 5000 }
       );
     } else {
-      setUserCoords({ lat: classroom.latitude, lng: classroom.longitude });
+      setUserCoords(null);
     }
   }, [classroom]);
 
@@ -291,18 +293,22 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
     try {
       // Step 1: Geolocation Check
-      const currentLat = userCoords?.lat ?? classroom.latitude;
-      const currentLng = userCoords?.lng ?? classroom.longitude;
+      const coords = overrideFrame ? {lat: classroom.latitude, lng: classroom.longitude} : await new Promise<{lat:number;lng:number}>((resolve,reject)=>{
+        if (!navigator.geolocation) { reject(new Error("Location is unavailable. Use an administrator manual check-in.")); return; }
+        navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lng:p.coords.longitude}),()=>reject(new Error("Location permission is required. Allow location and retry, or use manual attendance.")),{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+      });
+      const currentLat=coords.lat;
+      const currentLng=coords.lng;
 
       let locVerification: ClassroomVerificationResult;
       try {
         locVerification = await verifyClassroomLocation(currentLat, currentLng, classroom);
       } catch (err) {
         locVerification = {
-          isPresentInClassroom: true,
-          distanceMeters: 2,
+          isPresentInClassroom: false,
+          distanceMeters: 0,
           maxRadiusMeters: classroom.radiusMeters,
-          message: "Verified in physical classroom.",
+          message: "Location could not be verified.",
         };
       }
 
@@ -322,6 +328,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       // Step 2: Facial Recognition Identification
       const aiResult = await runFacialScan(frameBase64, students);
       setScanResult(aiResult);
+      if (overrideFrame) {
+        setScanResult({...aiResult,verificationNotes:"Photo test only — no attendance was saved. " + (aiResult.verificationNotes || "")});
+        setIsScanning(false);
+        return;
+      }
 
       // Step 3: Log Attendance
       if (aiResult.matched && aiResult.studentId) {
@@ -364,7 +375,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           });
         } catch (e) {}
 
-        const todayStr = new Date().toISOString().split("T")[0];
+        const todayStr = getLocalDateKey();
         const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
         const newRecord = await logAttendanceRecord({
@@ -428,7 +439,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     if (!targetStudent) return;
 
     setParentAlertStatus("Sending alert notification...");
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getLocalDateKey();
     const res = await sendParentAbsentAlert(targetStudent, todayStr, "Absence notification logged via scanner");
 
     if (res.success) {
@@ -469,7 +480,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             </span>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Local face matching, classroom presence verification, and offline-first attendance logging
+            Local face matching and classroom presence verification. Photo tests never create attendance records.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
             <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${
@@ -713,7 +724,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                       : "bg-red-50 text-red-700 border-red-200"
                   }`}
                 >
-                  {scanResult.matched ? `${scanResult.confidence}% AI Confidence` : "Unmatched"}
+                  {scanResult.matched ? `${scanResult.confidence}% similarity score` : "Unmatched"}
                 </span>
               )}
             </div>
@@ -842,7 +853,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 <button
                   key={student.id}
                   onClick={async () => {
-                    const todayStr = new Date().toISOString().split("T")[0];
+                    const todayStr = getLocalDateKey();
                     const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                     const newRec = await logAttendanceRecord({
                       studentId: student.id,

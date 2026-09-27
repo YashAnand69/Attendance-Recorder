@@ -1,306 +1,483 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { lazy, Suspense, useState, useEffect, useCallback } from "react";
-import { Student, Classroom, AttendanceRecord } from "./types";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import {
-  fetchStudents,
-  subscribeToAllAttendance,
-  seedInitialDataIfNeeded,
-  getOfflineQueue,
+  LayoutDashboard,
+  ScanFace,
+  Users,
+  BarChart3,
+  Settings2,
+  ArrowUpRight,
+  Bell,
+  RefreshCw,
+  LogOut,
+  LockKeyhole,
+  ChevronRight,
+  Menu,
+  X,
+  Database,
+  Download,
+  ShieldCheck,
+  MapPin,
+} from "lucide-react";
+import {
+  getWorkspace,
+  getSyncStatus,
+  subscribeWorkspace,
+  initializeWorkspace,
+  refreshWorkspace,
   syncOfflineQueueToCloud,
+  isCloudWorkspace,
+  logout,
+  saveClassroom,
 } from "./lib/attendanceStore";
 import { DEFAULT_CLASSROOM } from "./lib/mockData";
-import { getLocalDateKey } from "./lib/dateUtils";
-import { Header } from "./components/Header";
-import { LogOut, ShieldCheck } from "lucide-react";
-
-const CameraScanner = lazy(() => import("./components/CameraScanner").then((module) => ({ default: module.CameraScanner })));
-const Dashboard = lazy(() => import("./components/Dashboard").then((module) => ({ default: module.Dashboard })));
-const StudentManagement = lazy(() => import("./components/StudentManagement").then((module) => ({ default: module.StudentManagement })));
-const ReportsAnalytics = lazy(() => import("./components/ReportsAnalytics").then((module) => ({ default: module.ReportsAnalytics })));
-const LocationConfigModal = lazy(() => import("./components/LocationConfigModal").then((module) => ({ default: module.LocationConfigModal })));
-const AdminLoginModal = lazy(() => import("./components/AdminLoginModal").then((module) => ({ default: module.AdminLoginModal })));
-
-const CLASSROOM_CACHE_KEY = "smart_attendance_classroom_v1";
-
-function getStoredClassroom(): Classroom {
-  try {
-    const cached = localStorage.getItem(CLASSROOM_CACHE_KEY);
-    if (cached) return { ...DEFAULT_CLASSROOM, ...JSON.parse(cached) };
-  } catch {
-    // Fall through to the safe demo classroom when storage is unavailable.
-  }
-  return DEFAULT_CLASSROOM;
-}
-
+import { Overview } from "./components/Overview";
+const Scanner = lazy(() =>
+  import("./components/CameraScanner").then((m) => ({
+    default: m.CameraScanner,
+  })),
+);
+const Roster = lazy(() =>
+  import("./components/StudentManagement").then((m) => ({
+    default: m.StudentManagement,
+  })),
+);
+const Reports = lazy(() =>
+  import("./components/ReportsAnalytics").then((m) => ({
+    default: m.ReportsAnalytics,
+  })),
+);
+const Login = lazy(() =>
+  import("./components/AdminLoginModal").then((m) => ({
+    default: m.AdminLoginModal,
+  })),
+);
+const Location = lazy(() =>
+  import("./components/LocationConfigModal").then((m) => ({
+    default: m.LocationConfigModal,
+  })),
+);
+type Tab = "overview" | "scanner" | "students" | "reports" | "settings";
+const links = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "scanner", label: "Face check-in", icon: ScanFace },
+  { id: "students", label: "Students", icon: Users },
+  { id: "reports", label: "Reports & insights", icon: BarChart3 },
+  { id: "settings", label: "Workspace settings", icon: Settings2 },
+] as const;
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"scanner" | "dashboard" | "students" | "reports">("scanner");
-  const [students, setStudents] = useState<Student[]>([]);
-  const [classroom, setClassroom] = useState<Classroom>(getStoredClassroom);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateKey());
-  const [isInitializing, setIsInitializing] = useState(true);
-
-  // Admin Mode & Password Protection State
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem("smart_attendance_admin_unlocked") === "true";
-    } catch (e) {
-      return false;
-    }
-  });
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
-  const [pendingTab, setPendingTab] = useState<"scanner" | "dashboard" | "students" | "reports" | null>(null);
-
-  // Network & Offline Cache States
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
-  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
-  const [isLocationModalOpen, setIsLocationModalOpen] = useState<boolean>(false);
-
-  // Handle Tab Switch with Admin Gate
-  const handleSelectTab = (tab: "scanner" | "dashboard" | "students" | "reports") => {
-    if (tab === "scanner") {
-      setActiveTab("scanner");
-      return;
-    }
-
-    if (isAdminUnlocked) {
-      setActiveTab(tab);
-    } else {
-      setPendingTab(tab);
-      setIsAdminModalOpen(true);
-    }
-  };
-
-  const handleAdminSuccess = () => {
-    setIsAdminUnlocked(true);
-    try {
-      sessionStorage.setItem("smart_attendance_admin_unlocked", "true");
-    } catch (e) {}
-
-    setIsAdminModalOpen(false);
-    if (pendingTab) {
-      setActiveTab(pendingTab);
-      setPendingTab(null);
-    } else if (activeTab === "scanner") {
-      setActiveTab("dashboard");
-    }
-  };
-
-  const handleLockAdmin = () => {
-    setIsAdminUnlocked(false);
-    try {
-      sessionStorage.removeItem("smart_attendance_admin_unlocked");
-    } catch (e) {}
-    setActiveTab("scanner");
-  };
-
-  // Update offline queue count
-  const refreshOfflineQueueCount = useCallback(() => {
-    const queue = getOfflineQueue();
-    setOfflineQueueCount(queue.length);
-  }, []);
-
-  // Handle Online/Offline Status
+  const [tab, setTab] = useState<Tab>("overview");
+  const [workspace, setWorkspace] = useState(getWorkspace);
+  const [sync, setSync] = useState(getSyncStatus);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
-    const handleOnline = async () => {
-      setIsOnline(true);
-      const count = await syncOfflineQueueToCloud();
-      if (count > 0) {
-        refreshOfflineQueueCount();
-      }
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, [refreshOfflineQueueCount]);
-
-  // Load Students and Seed Database
-  useEffect(() => {
-    const initApp = async () => {
-      try {
-        // Keep the first paint fast on a slow connection; the local cache is the immediate source of truth.
-        await Promise.race([
-          seedInitialDataIfNeeded(),
-          new Promise((resolve) => setTimeout(resolve, 2200)),
-        ]);
-        const loadedStudents = await fetchStudents();
-        setStudents(loadedStudents);
-      } finally {
-        refreshOfflineQueueCount();
-        setIsInitializing(false);
-      }
-    };
-
-    initApp();
-  }, [refreshOfflineQueueCount]);
-
-  // Subscribe once to the full attendance stream so dashboard and monthly reports stay truthful.
-  useEffect(() => {
-    const unsubscribe = subscribeToAllAttendance((newRecords) => {
-      setRecords(newRecords);
-      refreshOfflineQueueCount();
+    const unsubscribe = subscribeWorkspace(() => {
+      setWorkspace({ ...getWorkspace() });
+      setSync({ ...getSyncStatus() });
     });
-
-    return () => unsubscribe();
-  }, [refreshOfflineQueueCount]);
-
-  // Sync Offline Queue manually
-  const handleSyncOfflineQueue = async () => {
-    await syncOfflineQueueToCloud();
-    refreshOfflineQueueCount();
-    // Refresh student records
-    const updatedStudents = await fetchStudents();
-    setStudents(updatedStudents);
+    void initializeWorkspace();
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void syncOfflineQueueToCloud().then(refreshWorkspace);
+      }
+    };
+    const interval = setInterval(refresh, 20000);
+    const connection = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) refresh();
+    };
+    window.addEventListener("online", connection);
+    window.addEventListener("offline", connection);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+      window.removeEventListener("online", connection);
+      window.removeEventListener("offline", connection);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+  const cloud = sync.mode === "cloud";
+  const classroom = workspace.classrooms[0] || DEFAULT_CLASSROOM;
+  const navigate = (id: Tab) => {
+    setTab(id);
+    setMobileOpen(false);
   };
-
-  const handleStudentAdded = (newStudent: Student) => {
-    setStudents((prev) => [newStudent, ...prev.filter((s) => s.id !== newStudent.id)]);
+  const downloadBackup = () => {
+    const url = URL.createObjectURL(
+      new Blob(
+        [
+          JSON.stringify(
+            { version: 1, exportedAt: new Date().toISOString(), ...workspace },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      ),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      "attendly-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+    setNotice(
+      "Backup downloaded. It contains personal information; store it securely.",
+    );
   };
-
-  const handleStudentDeleted = (studentId: string) => {
-    setStudents((prev) => prev.filter((s) => s.id !== studentId));
-  };
-
-  const handleAttendanceLogged = (newRecord: AttendanceRecord) => {
-    setRecords((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
-    refreshOfflineQueueCount();
-  };
-
-  const handleSaveClassroom = (updatedClassroom: Classroom) => {
-    setClassroom(updatedClassroom);
-    try {
-      localStorage.setItem(CLASSROOM_CACHE_KEY, JSON.stringify(updatedClassroom));
-    } catch {
-      // Classroom settings still apply for the current session if storage is blocked.
-    }
-  };
-
   return (
-    <div className="app-shell min-h-screen text-zinc-900 font-sans antialiased selection:bg-slate-900 selection:text-white">
-      {/* Application Navigation Bar */}
-      <Header
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        isOnline={isOnline}
-        offlineQueueCount={offlineQueueCount}
-        onSyncOfflineQueue={handleSyncOfflineQueue}
-        onOpenLocationModal={() => {
-          if (isAdminUnlocked) {
-            setIsLocationModalOpen(true);
-          } else {
-            setIsAdminModalOpen(true);
-          }
-        }}
-        classroomName={classroom.name}
-        isAdminUnlocked={isAdminUnlocked}
-        onOpenAdminModal={() => setIsAdminModalOpen(true)}
-        onLockAdmin={handleLockAdmin}
-        totalStudentsCount={students.length}
-      />
-
-      {/* Admin Mode Bar Banner if Unlocked */}
-      {isAdminUnlocked && (
-        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-1.5 text-xs">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-emerald-900 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Admin Mode Active</span>
-              <span className="hidden sm:inline text-emerald-700 font-normal">· Full administrative privileges unlocked</span>
-            </div>
+    <div className="workspace">
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      {mobileOpen && (
+        <button
+          className="sidebar-scrim"
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+      <aside className={"sidebar " + (mobileOpen ? "is-open" : "")}>
+        <a
+          className="brand"
+          href="#overview"
+          onClick={() => navigate("overview")}
+        >
+          <span className="brand-mark">
+            <ScanFace size={25} />
+          </span>
+          attendly<span className="brand-dot">.</span>
+        </a>
+        <div className="workspace-selector">
+          <span className="workspace-avatar">A</span>
+          <div>
+            <strong>Academic workspace</strong>
+            <small>{cloud ? "Administrator access" : "Interactive demo"}</small>
+          </div>
+          <ChevronRight size={15} />
+        </div>
+        <p className="nav-caption">WORKSPACE</p>
+        <nav aria-label="Main navigation">
+          {links.map(({ id, label, icon: Icon }) => (
             <button
-              onClick={handleLockAdmin}
-              className="flex items-center space-x-1 px-2 py-0.5 bg-white hover:bg-emerald-100/60 text-emerald-800 border border-emerald-300 rounded text-[11px] font-medium transition-colors cursor-pointer"
+              key={id}
+              className={"nav-item " + (id === tab ? "selected" : "")}
+              onClick={() => navigate(id)}
+              aria-current={id === tab ? "page" : undefined}
             >
-              <LogOut className="w-3 h-3 text-emerald-600" />
-              <span>Lock Admin</span>
+              <Icon size={19} />
+              <span>{label}</span>
+              {id === "students" && <b>{workspace.students.length}</b>}
+              {id === "scanner" && <i className="live-dot" />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="privacy-card">
+            <ShieldCheck size={22} />
+            <strong>Recognition stays here.</strong>
+            <p>
+              Face matching runs on your device. New scan images are not
+              retained.
+            </p>
+            <button onClick={() => navigate("settings")}>
+              About your data <ArrowUpRight size={14} />
             </button>
           </div>
+          <button
+            className="account-button"
+            onClick={() => {
+              if (cloud) {
+                void logout().catch((e) => setNotice(e.message));
+              } else setLoginOpen(true);
+            }}
+          >
+            <span className="workspace-avatar">{cloud ? "YA" : "D"}</span>
+            <span>
+              <strong>{cloud ? "Administrator" : "Demo workspace"}</strong>
+              <small>
+                {cloud ? "Sign out securely" : "Sign in to your workspace"}
+              </small>
+            </span>
+            {cloud ? <LogOut size={17} /> : <LockKeyhole size={17} />}
+          </button>
         </div>
-      )}
-
-      {/* Main Container Viewport */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {isInitializing && (
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
-            <span>Loading your classroom roster… local mode is ready while cloud sync connects.</span>
+      </aside>
+      <div className="workspace-body">
+        <header className="topbar">
+          <div className="breadcrumb">
+            <button
+              className="mobile-toggle"
+              aria-label="Open navigation"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Menu size={21} />
+            </button>
+            <span>Workspace</span>
+            <ChevronRight size={14} />
+            <strong>{links.find((l) => l.id === tab)?.label}</strong>
           </div>
-        )}
-        <Suspense fallback={<div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-slate-200 bg-white/70 text-sm text-slate-500 shadow-sm">Loading workspace…</div>}>
-          {activeTab === "scanner" && (
-            <CameraScanner
-              students={students}
-              classroom={classroom}
-              onAttendanceLogged={handleAttendanceLogged}
-              isOnline={isOnline}
-            />
+          <div className="topbar-actions">
+            <button
+              className={
+                "sync-pill " + (sync.state === "error" ? "sync-error" : "")
+              }
+              onClick={() =>
+                void syncOfflineQueueToCloud().then(refreshWorkspace)
+              }
+              title={sync.message}
+            >
+              <span className="live-dot" />
+              {!online
+                ? "Offline"
+                : !cloud
+                  ? "Demo mode"
+                  : sync.pending
+                    ? sync.pending + " pending"
+                    : sync.state === "error"
+                      ? "Sync needs attention"
+                      : "Cloud connected"}
+            </button>
+            <button
+              className="icon-button"
+              aria-label="View sync details"
+              onClick={() => navigate("settings")}
+            >
+              <Bell size={18} />
+            </button>
+            <button
+              className="user-avatar"
+              aria-label={cloud ? "Account settings" : "Sign in"}
+              onClick={() =>
+                cloud ? navigate("settings") : setLoginOpen(true)
+              }
+            >
+              {cloud ? "YA" : "D"}
+            </button>
+          </div>
+        </header>
+        <main id="main" className="main-content">
+          {!cloud && (
+            <div className="demo-banner">
+              <span>
+                <strong>Take a look around.</strong> You're viewing sample data.
+                Demo changes stay in this browser.
+              </span>
+              <button onClick={() => setLoginOpen(true)}>
+                Open my workspace <ArrowUpRight size={15} />
+              </button>
+            </div>
           )}
-
-          {activeTab === "dashboard" && (
-            <Dashboard
-              students={students}
-              records={records}
-              classroom={classroom}
-              isOnline={isOnline}
-              offlineQueueCount={offlineQueueCount}
-              onSyncOfflineQueue={handleSyncOfflineQueue}
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-              onRecordUpdated={() => {
-                refreshOfflineQueueCount();
-              }}
-            />
+          {notice && (
+            <div className="notice" role="status">
+              {notice}
+              <button aria-label="Dismiss" onClick={() => setNotice("")}>
+                <X size={16} />
+              </button>
+            </div>
           )}
-
-          {activeTab === "students" && (
-            <StudentManagement
-              students={students}
-              onStudentAdded={handleStudentAdded}
-              onStudentDeleted={handleStudentDeleted}
-              className={classroom.name}
-            />
-          )}
-
-          {activeTab === "reports" && (
-            <ReportsAnalytics
-              students={students}
-              records={records}
-              classroom={classroom}
-            />
-          )}
-        </Suspense>
-      </main>
-
-      {/* Admin Login Modal */}
+          <Suspense
+            fallback={
+              <div className="loading-card">
+                <RefreshCw className="animate-spin" size={20} /> Opening your
+                workspace…
+              </div>
+            }
+          >
+            {tab === "overview" && (
+              <Overview
+                students={workspace.students}
+                records={workspace.attendance}
+                classroom={classroom}
+                onScan={() => navigate("scanner")}
+                onStudents={() => navigate("students")}
+              />
+            )}
+            {tab === "scanner" && (
+              <>
+                <div className="page-heading">
+                  <div className="eyebrow">A BETTER WAY TO CHECK IN</div>
+                  <h1>A face. A moment. You're here.</h1>
+                  <p>
+                    Position one face in the frame. Location permission is
+                    required to verify classroom presence.
+                  </p>
+                </div>
+                <div className="legacy-panel">
+                  <Scanner
+                    students={workspace.students}
+                    classroom={classroom}
+                    onAttendanceLogged={() => {}}
+                    isOnline={online}
+                  />
+                </div>
+              </>
+            )}
+            {tab === "students" && (
+              <>
+                <div className="page-heading">
+                  <div className="eyebrow">YOUR CLASSROOM COMMUNITY</div>
+                  <h1>Every student, in one place.</h1>
+                  <p>
+                    Manage your roster, enroll a face photo, and keep guardian
+                    details up to date.
+                  </p>
+                </div>
+                <div className="legacy-panel">
+                  <Roster
+                    students={workspace.students}
+                    onStudentAdded={() => {}}
+                    onStudentDeleted={() => {}}
+                    className={classroom.name}
+                  />
+                </div>
+              </>
+            )}
+            {tab === "reports" && (
+              <>
+                <div className="page-heading">
+                  <div className="eyebrow">FROM RECORDS TO UNDERSTANDING</div>
+                  <h1>See the bigger picture.</h1>
+                  <p>
+                    Review attendance patterns, select your reporting period,
+                    and export your records.
+                  </p>
+                </div>
+                <div className="legacy-panel">
+                  <Reports
+                    students={workspace.students}
+                    records={workspace.attendance}
+                    classroom={classroom}
+                  />
+                </div>
+              </>
+            )}
+            {tab === "settings" && (
+              <>
+                <div className="page-heading">
+                  <div className="eyebrow">WORKSPACE / SETTINGS</div>
+                  <h1>Built around your classroom.</h1>
+                  <p>
+                    Your location, your records, and a clear view of where
+                    everything is saved.
+                  </p>
+                </div>
+                <div className="settings-grid">
+                  <section className="surface settings-card">
+                    <MapPin />
+                    <h2>Classroom & location</h2>
+                    <p>{classroom.name}</p>
+                    <dl>
+                      <dt>Instructor</dt>
+                      <dd>{classroom.teacherName}</dd>
+                      <dt>Allowed radius</dt>
+                      <dd>{classroom.radiusMeters} meters</dd>
+                      <dt>Coordinates</dt>
+                      <dd>
+                        {classroom.latitude}, {classroom.longitude}
+                      </dd>
+                    </dl>
+                    <button
+                      className="primary-button"
+                      onClick={() => setLocationOpen(true)}
+                    >
+                      Edit classroom <Settings2 size={16} />
+                    </button>
+                  </section>
+                  <section className="surface settings-card">
+                    <Database />
+                    <h2>Storage & synchronization</h2>
+                    <p>
+                      {cloud
+                        ? "Netlify Blobs · attendly-attendance"
+                        : "Demo data · this browser only"}
+                    </p>
+                    <dl>
+                      <dt>Sync status</dt>
+                      <dd>{sync.message}</dd>
+                      <dt>Pending changes</dt>
+                      <dd>{sync.pending}</dd>
+                      <dt>Last successful sync</dt>
+                      <dd>
+                        {sync.lastSync
+                          ? new Date(sync.lastSync).toLocaleString()
+                          : "Not yet synced"}
+                      </dd>
+                    </dl>
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        void syncOfflineQueueToCloud().then(refreshWorkspace)
+                      }
+                    >
+                      <RefreshCw size={16} /> Retry sync
+                    </button>
+                  </section>
+                  <section className="surface settings-card">
+                    <ShieldCheck />
+                    <h2>Your data, explained</h2>
+                    <p>
+                      Student profiles, enrolled photos, attendance and
+                      classroom settings are stored in the protected cloud
+                      workspace. Face descriptors are computed in browser
+                      memory. New camera snapshots are discarded after matching.
+                    </p>
+                    <p>
+                      Offline changes stay in this browser until a successful
+                      sync. Keep pending changes synced before clearing browser
+                      data.
+                    </p>
+                    <p>
+                      Face matching is an aid for a supervised classroom: it
+                      does not include liveness detection or prevent photo
+                      spoofing.
+                    </p>
+                  </section>
+                  <section className="surface settings-card">
+                    <Download />
+                    <h2>Keep a copy</h2>
+                    <p>
+                      Download all currently loaded records, students and
+                      classroom settings as JSON. This backup includes enrolled
+                      photos and contact details.
+                    </p>
+                    <button className="primary-button" onClick={downloadBackup}>
+                      Download backup <Download size={16} />
+                    </button>
+                    <p className="fine-print">
+                      Backups are manual. There is no scheduled retention or
+                      automatic recovery service configured.
+                    </p>
+                  </section>
+                </div>
+              </>
+            )}
+          </Suspense>
+          <footer className="workspace-footer">
+            <span>
+              attendly. <span>Less paperwork. More presence.</span>
+            </span>
+            <span>{cloud ? "Private workspace" : "Demo workspace"} · v2.0</span>
+          </footer>
+        </main>
+      </div>
       <Suspense fallback={null}>
-        <AdminLoginModal
-          isOpen={isAdminModalOpen}
-          onClose={() => {
-            setIsAdminModalOpen(false);
-            setPendingTab(null);
-          }}
-          onSuccess={handleAdminSuccess}
+        <Login
+          isOpen={loginOpen}
+          onClose={() => setLoginOpen(false)}
+          onSuccess={() => setLoginOpen(false)}
         />
-
-        {/* Classroom Geofence Location Configuration Modal */}
-        <LocationConfigModal
+        <Location
           classroom={classroom}
-          isOpen={isLocationModalOpen}
-          onClose={() => setIsLocationModalOpen(false)}
-          onSaveClassroom={handleSaveClassroom}
+          isOpen={locationOpen}
+          onClose={() => setLocationOpen(false)}
+          onSaveClassroom={(value) => {
+            void saveClassroom(value).catch((e) => setNotice(e.message));
+          }}
         />
       </Suspense>
     </div>

@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { downloadCSV } from "../lib/csv";
 import { Student } from "../types";
 import { addStudent, deleteStudent } from "../lib/attendanceStore";
 import {
@@ -49,6 +50,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   // Camera capture modal state inside registration form
   const [useCamera, setUseCamera] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  useEffect(()=>()=>{streamRef.current?.getTracks().forEach(t=>t.stop());},[]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,6 +95,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     try {
       setUseCamera(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
@@ -104,6 +108,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   // Stop Camera
   const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    streamRef.current = null;
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach((track) => track.stop());
@@ -137,6 +143,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 8*1024*1024) { setErrorMessage("Choose a JPEG, PNG or WebP photo smaller than 8 MB."); return; }
       const reader = new FileReader();
       reader.onloadend = async () => {
         const compressed = await compressImage(reader.result as string);
@@ -223,25 +230,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   // Export Roster CSV
   const handleExportRosterCSV = () => {
-    const headers = ["ID", "Roll Number", "Full Name", "Class", "Parent Email", "Parent Phone", "Enrolled Date"];
-    const rows = students.map((s) => [
-      `"${s.id}"`,
-      `"${s.rollNumber}"`,
-      `"${s.name}"`,
-      `"${s.className}"`,
-      `"${s.parentEmail}"`,
-      `"${s.parentPhone || ""}"`,
-      `"${s.createdAt || ""}"`,
-    ]);
-
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Roster_${className.replace(/\s+/g, "_")}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV('Roster.csv', [['ID','Roll number','Name','Class','Parent email','Parent phone','Enrolled'],...students.map(s=>[s.id,s.rollNumber,s.name,s.className,s.parentEmail,s.parentPhone,s.createdAt])]);
   };
 
   const filteredStudents = students.filter(
@@ -660,4 +649,3 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     </div>
   );
 };
-

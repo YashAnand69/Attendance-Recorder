@@ -7,7 +7,10 @@ type ParentAlertRequest = {
   reason?: string;
 };
 
+import { guard } from './_shared/auth';
 export default async (request: Request) => {
+  const denied = guard(request);
+  if (denied) return denied;
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }

@@ -26,7 +26,7 @@ async function loadModels(): Promise<FaceApi> {
         faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_PATH),
       ]);
       return faceapi;
-    });
+    }).catch(error => { modelsPromise = null; throw error; });
   }
 
   return modelsPromise;
@@ -86,7 +86,7 @@ function euclideanDistance(first: Float32Array, second: Float32Array): number {
 
 export async function warmFaceRecognition(students: Student[]): Promise<void> {
   const faceapi = await loadModels();
-  await Promise.all(students.slice(0, 30).map((student) => descriptorForStudent(faceapi, student)));
+  await Promise.all(students.map((student) => descriptorForStudent(faceapi, student)));
 }
 
 export async function recognizeFaceFromDataUrl(
@@ -95,19 +95,20 @@ export async function recognizeFaceFromDataUrl(
 ): Promise<FacialRecognitionResult> {
   const faceapi = await loadModels();
   const image = await imageFromSource(captureBase64);
-  const liveResult = await faceapi
-    .detectSingleFace(image, getDetectorOptions(faceapi))
+  const liveResults = await faceapi
+    .detectAllFaces(image, getDetectorOptions(faceapi))
     .withFaceLandmarks()
-    .withFaceDescriptor();
+    .withFaceDescriptors();
 
-  if (!liveResult) {
+  if (liveResults.length !== 1) {
     return {
       matched: false,
       confidence: 0,
-      verificationNotes: "No face detected. Move into the reticle and improve the lighting.",
+      verificationNotes: liveResults.length ? "Multiple faces detected. Only one person should be in the frame." : "No face detected. Move into the frame and improve the lighting.",
     };
   }
 
+  const liveResult = liveResults[0];
   const candidates = await Promise.all(
     students
       .filter((student) => student.status === "active")
@@ -134,7 +135,7 @@ export async function recognizeFaceFromDataUrl(
     };
   }
 
-  const confidence = Math.min(99.9, Math.max(75, (1 - closest.distance / MATCH_THRESHOLD) * 25 + 75));
+  const confidence = Math.max(0, Math.min(100, (1 - closest.distance) * 100));
   return {
     matched: true,
     confidence: Math.round(confidence * 10) / 10,
@@ -142,6 +143,6 @@ export async function recognizeFaceFromDataUrl(
     studentName: closest.student.name,
     rollNumber: closest.student.rollNumber,
     className: closest.student.className,
-    verificationNotes: `On-device face match verified at ${Math.round(confidence)}% confidence.`,
+    verificationNotes: `On-device match: ${Math.round(confidence)}% similarity. This score is not a probability of identity.`,
   };
 }

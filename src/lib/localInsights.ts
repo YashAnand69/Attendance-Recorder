@@ -5,6 +5,8 @@ export function buildLocalAttendanceInsights(
   records: AttendanceRecord[],
   schoolDays: number,
 ): AiAttendanceInsights {
+  const rosterIds = new Set(students.map((student) => student.id));
+  records = Array.from(new Map(records.filter((record) => rosterIds.has(record.studentId)).map((record) => [`${record.studentId}:${record.date}`, record])).values());
   const observedDays = new Set(records.map((record) => record.date)).size;
   const totalDays = Math.max(observedDays, schoolDays > 0 ? schoolDays : 1);
   const presentCount = records.filter((record) => record.status === "present" || record.status === "late").length;

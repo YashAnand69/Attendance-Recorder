@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { downloadCSV } from "./csv";
 import { Student, AttendanceRecord } from "../types";
 
 export interface MonthlyStudentSummary {
@@ -19,14 +20,14 @@ export function calculateMonthlySummaries(
   totalSchoolDays: number = 20
 ): MonthlyStudentSummary[] {
   return students.map((student) => {
-    const studentRecords = records.filter((r) => r.studentId === student.id);
+    const studentRecords = Array.from(new Map(records.filter((r) => r.studentId === student.id).map(r=>[r.date,r])).values());
     const presentDays = studentRecords.filter((r) => r.status === "present").length;
     const lateDays = studentRecords.filter((r) => r.status === "late").length;
     const absentDays = Math.max(0, totalSchoolDays - presentDays - lateDays);
 
-    // Calculate overall percentage (present + 0.5*late)
-    const effectivePresent = presentDays + lateDays * 0.5;
-    const percentage = Math.min(100, Math.round((effectivePresent / totalSchoolDays) * 100));
+    // Late arrivals count as attended days, matching the overview.
+    const effectivePresent = presentDays + lateDays;
+    const percentage = totalSchoolDays > 0 ? Math.min(100, Math.round((effectivePresent / totalSchoolDays) * 100)) : 0;
 
     return {
       student,
@@ -61,10 +62,10 @@ export function exportMonthlyReportCSV(
   ];
 
   const rows = summaries.map((s) => [
-    `"${s.student.rollNumber}"`,
-    `"${s.student.name}"`,
-    `"${s.student.className}"`,
-    `"${s.student.parentEmail}"`,
+    s.student.rollNumber,
+    s.student.name,
+    s.student.className,
+    s.student.parentEmail,
     s.totalDays,
     s.presentDays,
     s.lateDays,
@@ -73,17 +74,7 @@ export function exportMonthlyReportCSV(
     s.percentage >= 85 ? "Good" : s.percentage >= 75 ? "Warning" : "Critical (<75%)",
   ]);
 
-  const csvContent =
-    "data:text/csv;charset=utf-8," +
-    [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-
-  const encodedUri = encodeURI(csvContent);
-  const link = document.createElement("a");
-  link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `Monthly_Attendance_Report_${className.replace(/\s+/g, "_")}_${monthName}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  downloadCSV(`Monthly_Attendance_Report_${monthName}.csv`, [headers, ...rows]);
 }
 
 // -------------------------------------------------------------

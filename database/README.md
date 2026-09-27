@@ -86,6 +86,6 @@ The unique constraint on \`ATTENDANCE(session_id, student_id)\` enforces the app
 
 ## Relationship to the existing web app
 
-The current app remains Firebase/offline-first so its deployed functionality is not broken. This Oracle module implements the same core domain as a normalized relational database for the SQL/PLSQL academic mini-project.
+The web app uses Netlify Blobs with a browser offline cache. This Oracle module is a separate normalized relational database for the SQL/PLSQL academic mini-project; the SQL scripts are not executed by the website. See [the database guide](../docs/DATABASE-AND-UPGRADE.md) for the runtime architecture and deployment status.
 
-A production migration could replace Firestore calls in \`src/lib/attendanceStore.ts\` with an API backed by Oracle, while the React UI and facial-recognition flow remain largely unchanged.
+A future production migration would replace the Netlify data API with an authenticated Oracle-backed API and reconcile calendar-day attendance with the Oracle session model.

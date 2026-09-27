@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { login } from '../lib/attendanceStore';
 import { Lock, KeyRound, Eye, EyeOff, AlertCircle, ArrowRight, X } from "lucide-react";
 
 interface AdminLoginModalProps {
@@ -16,21 +17,24 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (password.trim() === "YASHlovesbubs69") {
+    setBusy(true);
+    try {
+      await login(password);
       setPassword("");
       onSuccess();
-    } else {
-      setError("Invalid administrator password. Access denied.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to sign in.');
       setShake(true);
       setTimeout(() => setShake(false), 500);
-    }
+    } finally { setBusy(false); }
   };
 
   return (
@@ -56,10 +60,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-                Admin Authentication
+                Welcome back
               </h2>
               <p className="text-xs text-zinc-500">
-                Enter master credentials to unlock controls
+                Sign in to your private attendance workspace
               </p>
             </div>
           </div>
@@ -68,13 +72,15 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                Master Password
+                Workspace password
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-400">
                   <KeyRound className="w-4 h-4" />
                 </div>
                 <input
+                  aria-label="Workspace password"
+                  autoComplete="current-password"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => {
@@ -88,6 +94,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-600 transition-colors"
                 >
@@ -113,9 +120,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               </button>
               <button
                 type="submit"
+                disabled={busy}
                 className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs rounded-lg shadow-xs flex items-center space-x-1.5 transition-colors"
               >
-                <span>Unlock</span>
+                <span>{busy ? 'Signing in…' : 'Sign in'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

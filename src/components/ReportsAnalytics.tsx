@@ -44,7 +44,8 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
   classroom,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(getLocalDateKey().slice(0, 7));
-  const [totalSchoolDays, setTotalSchoolDays] = useState(20);
+  const [schoolDaysOverride, setTotalSchoolDays] = useState<number | null>(null);
+  const totalSchoolDays = schoolDaysOverride ?? Math.max(1,new Set(records.filter(r=>r.date.startsWith(selectedMonth)).map(r=>r.date)).size);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiInsights, setAiInsights] = useState<any | null>(null);
   const [insightSource, setInsightSource] = useState<"local" | "ai">("local");
@@ -85,7 +86,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split("T")[0];
+      const dateStr = getLocalDateKey(d);
       const dayLabel = d.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" });
 
       const dayRecords = records.filter((r) => r.date === dateStr);
@@ -129,8 +130,8 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          students,
-          logs: monthRecords,
+          students: students.map(({id,name})=>({id,name})),
+          logs: monthRecords.map(({studentId,date,status})=>({studentId,date,status})),
           month: selectedMonth,
         }),
       });
@@ -182,7 +183,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
               min="1"
               max="31"
               value={totalSchoolDays}
-              onChange={(e) => setTotalSchoolDays(parseInt(e.target.value, 10) || 20)}
+              onChange={(e) => { setTotalSchoolDays(Math.max(1,Math.min(31,parseInt(e.target.value, 10) || 1))); setAiInsights(null); }}
               className="w-10 bg-white border border-zinc-200 text-zinc-900 px-1 py-0.5 rounded text-center font-medium focus:outline-none focus:border-zinc-900"
             />
           </div>
@@ -352,7 +353,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Generate AI Intelligence</span>
+                <span>Generate insights</span>
               </>
             )}
           </button>
@@ -426,7 +427,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                       <div>
                         <div className="font-bold text-zinc-900">{item.studentName}</div>
                         <div className="text-[10px] text-zinc-500 font-mono">
-                          {item.presentCount ?? item.percentage}% Attendance
+                          {item.percentage ?? summaries.find((summary) => summary.student.id === item.studentId)?.percentage ?? "—"}% Attendance
                         </div>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
@@ -443,7 +444,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
             <Sparkles className="w-6 h-6 text-zinc-400 mx-auto" />
             <p className="text-xs font-semibold text-zinc-700">No analysis generated for {monthLabel} yet.</p>
             <p className="text-[11px] text-zinc-500 max-w-md mx-auto">
-              Click "Generate AI Intelligence" above to evaluate daily trends, physical geofence verification compliance, and tailored student action plans.
+              Click "Generate insights" above to evaluate daily trends, attendance patterns and suggested follow-up actions.
             </p>
           </div>
         )}
@@ -463,6 +464,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                 <th className="px-5 py-3">Roll Number</th>
                 <th className="px-5 py-3">Student</th>
                 <th className="px-5 py-3">Present</th>
+                <th className="px-5 py-3">Late</th>
                 <th className="px-5 py-3">Absent</th>
                 <th className="px-5 py-3">Rate</th>
                 <th className="px-5 py-3">Status</th>
@@ -481,6 +483,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
                     <span>{s.student.name}</span>
                   </td>
                   <td className="px-5 py-3.5 text-emerald-700 font-medium">{s.presentDays} days</td>
+                  <td className="px-5 py-3.5 text-amber-700 font-medium">{s.lateDays} days</td>
                   <td className="px-5 py-3.5 text-red-700 font-medium">{s.absentDays} days</td>
 
                   {/* Attendance Percentage & Progress */}
