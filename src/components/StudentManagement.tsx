@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { downloadCSV } from "../lib/csv";
+import { validateEnrollmentPhoto } from "../lib/faceRecognition";
 import { Student } from "../types";
 import { addStudent, deleteStudent } from "../lib/attendanceStore";
 import {
@@ -178,6 +179,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     setIsSaving(true);
     try {
       const compressedFace = await compressImage(faceImageDataUrl);
+      await validateEnrollmentPhoto(compressedFace);
       const newStudent = await addStudent({
         name,
         rollNumber,

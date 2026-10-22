@@ -178,3 +178,22 @@ test("workspace demo changes never call cloud, and cloud writes retry without lo
   assert.equal(store.getPendingSyncCount(), 0);
   assert.equal(store.getSyncStatus().state, "saved");
 });
+
+test("face matching rejects malformed descriptors, distant faces and ambiguous identities", async () => {
+  const { descriptorDistance, chooseFaceMatch } = await import("../src/lib/faceMatching");
+  const vector = new Float32Array(128);
+  assert.equal(descriptorDistance(vector, vector), 0);
+  assert.equal(descriptorDistance(vector, new Float32Array(127)), Infinity);
+  const invalid = new Float32Array(128); invalid[0] = NaN;
+  assert.equal(descriptorDistance(vector, invalid), Infinity);
+  assert.equal(chooseFaceMatch([{student:"A",distance:0.6}]), null);
+  assert.equal(chooseFaceMatch([{student:"A",distance:0.3},{student:"B",distance:0.32}]), null);
+  assert.equal(chooseFaceMatch([{student:"A",distance:0.3},{student:"B",distance:0.5}])?.student, "A");
+  assert.equal(chooseFaceMatch([{student:"A",distance:NaN}]), null);
+});
+
+test("constant-time comparison handles multibyte input safely", async () => {
+  const { equal } = await import("../netlify/functions/_shared/auth");
+  assert.equal(equal("é", "a"), false);
+  assert.equal(equal("same", "same"), true);
+});

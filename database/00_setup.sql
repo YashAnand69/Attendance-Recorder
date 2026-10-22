@@ -9,9 +9,9 @@ PROMPT ============================================================
 PROMPT Attendly Oracle Database Setup
 PROMPT ============================================================
 
-@01_schema.sql
-@02_sample_data.sql
-@03_plsql_program_units.sql
+@@01_schema.sql
+@@02_sample_data.sql
+@@03_plsql_program_units.sql
 
 PROMPT ============================================================
 PROMPT Setup complete.

@@ -6,12 +6,12 @@ export const maxAge = 43200;
 export function sign(value: string) {
   const secret = env("ATTENDLY_SESSION_SECRET");
   if (!secret) throw new Error("Login is not configured.");
-  return createHmac("sha256", secret).update(value).digest("hex");
+  return createHmac("sha256", secret).update(`${env("ATTENDLY_PASSWORD_HASH") || ""}:${value}`).digest("hex");
 }
 export function equal(a: string, b: string) {
-  return (
-    a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-  );
+  const first = Buffer.from(a);
+  const second = Buffer.from(b);
+  return first.length === second.length && timingSafeEqual(first, second);
 }
 export function authenticated(req: Request): boolean {
   try {

@@ -181,7 +181,7 @@ SELECT
   COUNT(cs.session_id) AS total_sessions,
   SUM(CASE WHEN a.status = 'PRESENT' THEN 1 ELSE 0 END) AS present_count,
   SUM(CASE WHEN a.status = 'LATE' THEN 1 ELSE 0 END) AS late_count,
-  SUM(CASE WHEN a.status = 'ABSENT' OR a.attendance_id IS NULL THEN 1 ELSE 0 END) AS absent_or_missing_count,
+  SUM(CASE WHEN cs.session_id IS NOT NULL AND (a.status = 'ABSENT' OR a.attendance_id IS NULL) THEN 1 ELSE 0 END) AS absent_or_missing_count,
   ROUND(
     100 * SUM(CASE WHEN a.status IN ('PRESENT', 'LATE') THEN 1 ELSE 0 END)
     / NULLIF(COUNT(cs.session_id), 0),
