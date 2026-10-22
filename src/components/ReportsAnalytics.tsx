@@ -89,7 +89,8 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
       const dateStr = getLocalDateKey(d);
       const dayLabel = d.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" });
 
-      const dayRecords = records.filter((r) => r.date === dateStr);
+      const roster = new Set(students.map(student => student.id));
+      const dayRecords = Array.from(new Map<string, AttendanceRecord>(records.filter((r) => r.date === dateStr && roster.has(r.studentId)).map(record => [record.studentId, record] as const)).values());
       const presentCount = dayRecords.filter((r) => r.status === "present").length;
       const lateCount = dayRecords.filter((r) => r.status === "late").length;
       const verifiedPresent = Math.min(students.length, presentCount + lateCount);
@@ -105,7 +106,7 @@ export const ReportsAnalytics: React.FC<ReportsAnalyticsProps> = ({
       });
     }
     return days;
-  }, [records, students.length]);
+  }, [records, students]);
 
   // Attendance Distribution Bins
   const distributionData = useMemo(() => {

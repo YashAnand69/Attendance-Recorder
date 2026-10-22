@@ -28,6 +28,7 @@ import {
   isCloudWorkspace,
   logout,
   saveClassroom,
+  resetDemoWorkspace,
 } from "./lib/attendanceStore";
 import { DEFAULT_CLASSROOM } from "./lib/mockData";
 import { Overview } from "./components/Overview";
@@ -448,6 +449,14 @@ export default function App() {
                     <button className="primary-button" onClick={downloadBackup}>
                       Download backup <Download size={16} />
                     </button>
+                    {!cloud && (
+                      <>
+                        <p>Refresh the sample workspace with this week's attendance. This replaces demo edits in this browser.</p>
+                        <button className="secondary-button" onClick={() => { resetDemoWorkspace(); setNotice("Sample workspace refreshed for today."); }}>
+                          <RefreshCw size={16} /> Reset sample data
+                        </button>
+                      </>
+                    )}
                     <p className="fine-print">
                       Backups are manual. There is no scheduled retention or
                       automatic recovery service configured.

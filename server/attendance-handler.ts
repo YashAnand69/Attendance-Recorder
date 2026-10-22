@@ -117,9 +117,15 @@ return async (request: Request): Promise<Response> => {
       collection === "attendance_logs" &&
       (!["present", "absent", "late"].includes(String(data.status)) ||
         !/^\d{4}-\d{2}-\d{2}$/.test(String(data.date)) ||
+        !Number.isFinite(Date.parse(String(data.date) + "T00:00:00Z")) ||
+        new Date(String(data.date) + "T00:00:00Z").toISOString().slice(0, 10) !== data.date ||
+        typeof data.studentId !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,160}$/.test(data.studentId) ||
         id !== `att-${data.date}-${data.studentId}`)
     )
       return jsonResponse({ error: "Invalid attendance record." }, 400);
+    if (collection === "attendance_logs" && !(await store().get(collectionKey("students", String(data.studentId)), {type:"json"})))
+      return jsonResponse({ error: "This student is no longer enrolled. Refresh the roster before recording attendance." }, 400);
     if (
       collection === "classrooms" &&
       (![data.latitude, data.longitude, data.radiusMeters].every(

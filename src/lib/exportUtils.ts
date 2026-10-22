@@ -125,7 +125,8 @@ export function exportMonthlyReportPDF(
   doc.text("Student Name", 45, yPosition);
   doc.text("Total", 100, yPosition);
   doc.text("Present", 120, yPosition);
-  doc.text("Absent", 145, yPosition);
+  doc.text("Late", 140, yPosition);
+  doc.text("Absent", 153, yPosition);
   doc.text("Att %", 170, yPosition);
 
   yPosition += 8;
@@ -136,13 +137,25 @@ export function exportMonthlyReportPDF(
     if (yPosition > 270) {
       doc.addPage();
       yPosition = 20;
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.text("Roll No.", 16, yPosition);
+      doc.text("Student Name", 45, yPosition);
+      doc.text("Total", 100, yPosition);
+      doc.text("Present", 120, yPosition);
+      doc.text("Late", 140, yPosition);
+      doc.text("Absent", 153, yPosition);
+      doc.text("Att %", 170, yPosition);
+      doc.setFont("helvetica", "normal");
+      yPosition += 8;
     }
 
     doc.text(s.student.rollNumber, 16, yPosition);
     doc.text(s.student.name.substring(0, 25), 45, yPosition);
     doc.text(`${s.totalDays}`, 100, yPosition);
     doc.text(`${s.presentDays}`, 120, yPosition);
-    doc.text(`${s.absentDays}`, 145, yPosition);
+    doc.text(`${s.lateDays}`, 140, yPosition);
+    doc.text(`${s.absentDays}`, 153, yPosition);
 
     // Color code percentage text
     if (s.percentage < 75) {

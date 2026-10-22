@@ -112,7 +112,6 @@ export async function recognizeFaceFromDataUrl(
   const candidates = await Promise.all(
     students
       .filter((student) => student.status === "active")
-      .slice(0, 30)
       .map(async (student) => ({
         student,
         descriptor: await descriptorForStudent(faceapi, student),

@@ -104,6 +104,13 @@ export function subscribeWorkspace(fn: () => void) {
 export function isCloudWorkspace() {
   return authenticated;
 }
+export function resetDemoWorkspace() {
+  if (authenticated) return;
+  revision++;
+  state = demoState();
+  status = {...status, mode:"demo", pending:0, state:"idle", lastSync:null, message:"Fresh sample data saved on this device"};
+  persist();
+}
 export async function api(path: string, init: RequestInit = {}) {
   const res = await fetch(path, {
     ...init,

@@ -28,6 +28,11 @@ test("shared data API requires login and validates persistent record writes", as
   assert.equal((await call("POST", {collection: "students", action: "upsert", id: record.id, data: record})).status, 200);
   assert.equal((await (await call("GET")).json()).students[0].name, "Test");
   assert.equal((await call("POST", null)).status, 400);
+  const attendance = {id: "att-2026-02-30-stu-test", studentId: record.id, date: "2026-02-30", status: "present"};
+  assert.equal((await call("POST", {collection:"attendance_logs",action:"upsert",id:attendance.id,data:attendance})).status, 400);
+  const validAttendance = {...attendance,id:"att-2026-02-28-stu-test",date:"2026-02-28"};
+  assert.equal((await call("POST", {collection:"attendance_logs",action:"upsert",id:validAttendance.id,data:validAttendance})).status, 200);
+  assert.equal((await call("POST", {collection:"attendance_logs",action:"upsert",id:"att-2026-02-28-unknown",data:{...validAttendance,id:"att-2026-02-28-unknown",studentId:"unknown"}})).status, 400);
   assert.equal((await call("POST", {collection: "students", action: "upsert", id: "../bad", data: record})).status, 400);
   assert.equal((await call("POST", {collection: "students", action: "delete", id: record.id})).status, 200);
   assert.equal((await (await call("GET")).json()).students.length, 0);

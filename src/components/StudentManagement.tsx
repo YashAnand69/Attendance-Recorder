@@ -51,7 +51,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const [useCamera, setUseCamera] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  useEffect(()=>()=>{streamRef.current?.getTracks().forEach(t=>t.stop());},[]);
+  const cameraRequestRef = useRef(0);
+  useEffect(()=>()=>{cameraRequestRef.current++;streamRef.current?.getTracks().forEach(t=>t.stop());},[]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,15 +93,24 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   // Start Camera for facial photo capture
   const startCamera = async () => {
+    const requestId = ++cameraRequestRef.current;
     try {
       setUseCamera(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (requestId !== cameraRequestRef.current || !videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      streamRef.current?.getTracks().forEach(track => track.stop());
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        await videoRef.current.play();
       }
     } catch (e) {
+      if (requestId !== cameraRequestRef.current) return;
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
       setErrorMessage("Camera access denied or unavailable for registration photo.");
       setUseCamera(false);
     }
@@ -108,6 +118,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   // Stop Camera
   const stopCamera = () => {
+    cameraRequestRef.current++;
     streamRef.current?.getTracks().forEach(t=>t.stop());
     streamRef.current = null;
     if (videoRef.current && videoRef.current.srcObject) {
@@ -185,6 +196,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       setParentEmail("");
       setParentPhone("");
       setFaceImageDataUrl(null);
+      stopCamera();
       setIsRegistering(false);
 
       setTimeout(() => setStatusNotice(null), 4000);
@@ -264,6 +276,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
           <button
             onClick={() => {
+              if (isRegistering) stopCamera();
               setIsRegistering(!isRegistering);
               setErrorMessage(null);
             }}
@@ -423,7 +436,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
               <div className="pt-3 border-t border-zinc-100 flex justify-end space-x-2">
                 <button
                   type="button"
-                  onClick={() => setIsRegistering(false)}
+                  onClick={() => { stopCamera(); setIsRegistering(false); }}
                   disabled={isSaving}
                   className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium rounded-lg disabled:opacity-50 transition-colors"
                 >
