@@ -1,17 +1,26 @@
 import type { Student, FacialRecognitionResult } from "../types";
+import { chooseFaceMatch, descriptorDistance } from "./faceMatching";
 
 type FaceApi = typeof import("@vladmandic/face-api");
 
 let faceApiPromise: Promise<FaceApi> | null = null;
 let modelsPromise: Promise<FaceApi> | null = null;
-const descriptorCache = new Map<string, Float32Array>();
+const descriptorCache = new Map<string, { source: string; result: Promise<Float32Array | null> }>();
+// Serialize GPU work so roster preparation cannot flood the device or overlap a scan.
+let inferenceTail: Promise<unknown> = Promise.resolve();
+function infer<T>(work: () => Promise<T>): Promise<T> {
+  const result = inferenceTail.then(work);
+  inferenceTail = result.catch(() => {});
+  return result;
+}
+export function clearFaceRecognitionCache() { descriptorCache.clear(); }
 
 const MODEL_PATH = "/models";
-const MATCH_THRESHOLD = 0.55;
+
 
 async function getFaceApi(): Promise<FaceApi> {
   if (!faceApiPromise) {
-    faceApiPromise = import("@vladmandic/face-api");
+    faceApiPromise = import("@vladmandic/face-api").catch(error => { faceApiPromise = null; throw error; });
   }
 
   return faceApiPromise;
@@ -42,63 +51,62 @@ function getDetectorOptions(faceapi: FaceApi) {
 async function imageFromSource(source: string): Promise<HTMLImageElement> {
   const image = new Image();
   image.crossOrigin = "anonymous";
-  image.src = source;
-  try {
-    await image.decode();
-  } catch {
-    if (!image.complete || image.naturalWidth === 0) throw new Error("Face image could not be loaded.");
-  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => { image.src = ""; reject(new Error("Face image took too long to load.")); }, 10000);
+    image.onload = () => { window.clearTimeout(timer); resolve(); };
+    image.onerror = () => { window.clearTimeout(timer); reject(new Error("Face image could not be loaded.")); };
+    image.src = source;
+  });
   return image;
 }
 
-async function descriptorForStudent(faceapi: FaceApi, student: Student): Promise<Float32Array | null> {
-  if (!student.faceImageDataUrl) return null;
-
-  const cacheKey = `${student.id}:${student.faceImageDataUrl}`;
-  const cached = descriptorCache.get(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const image = await imageFromSource(student.faceImageDataUrl);
-    const result = await faceapi
-      .detectSingleFace(image, getDetectorOptions(faceapi))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!result) return null;
-
-    descriptorCache.set(cacheKey, result.descriptor);
-    return result.descriptor;
-  } catch (error) {
-    console.warn(`Could not create a face template for ${student.name}:`, error);
-    return null;
-  }
+export async function validateEnrollmentPhoto(source: string): Promise<Float32Array> {
+  const faceapi = await loadModels();
+  const image = await imageFromSource(source);
+  const results = await infer(async () => await faceapi.detectAllFaces(image, getDetectorOptions(faceapi))
+    .withFaceLandmarks().withFaceDescriptors());
+  if (results.length !== 1) throw new Error(results.length
+    ? "Use a photo with exactly one person in the frame."
+    : "No clear face detected. Use a well-lit, front-facing photo.");
+  return results[0].descriptor;
 }
 
-function euclideanDistance(first: Float32Array, second: Float32Array): number {
-  let sum = 0;
-  for (let index = 0; index < first.length; index += 1) {
-    const difference = first[index] - second[index];
-    sum += difference * difference;
-  }
-  return Math.sqrt(sum);
+async function descriptorForStudent(student: Student): Promise<Float32Array | null> {
+  if (!student.faceImageDataUrl) return null;
+  const cached = descriptorCache.get(student.id);
+  if (cached?.source === student.faceImageDataUrl) return cached.result;
+  const result = validateEnrollmentPhoto(student.faceImageDataUrl).catch(() => {
+    // A failed remote image may succeed on retry; do not cache failures indefinitely.
+    if (descriptorCache.get(student.id)?.result === result) descriptorCache.delete(student.id);
+    return null;
+  });
+  if (descriptorCache.size >= 500) descriptorCache.delete(descriptorCache.keys().next().value!);
+  descriptorCache.set(student.id, { source: student.faceImageDataUrl, result });
+  return result;
 }
 
 export async function warmFaceRecognition(students: Student[]): Promise<void> {
-  const faceapi = await loadModels();
-  await Promise.all(students.map((student) => descriptorForStudent(faceapi, student)));
+  await loadModels();
+  const active = students.filter(student => student.status === "active");
+  const ids = new Set(active.map(student => student.id));
+  for (const id of descriptorCache.keys()) if (!ids.has(id)) descriptorCache.delete(id);
+  // Yield between templates to keep controls responsive on slower devices.
+  for (const student of active) {
+    await descriptorForStudent(student);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+  }
 }
 
 export async function recognizeFaceFromDataUrl(
-  captureBase64: string,
+  captureBase64: string | HTMLCanvasElement,
   students: Student[],
 ): Promise<FacialRecognitionResult> {
   const faceapi = await loadModels();
-  const image = await imageFromSource(captureBase64);
-  const liveResults = await faceapi
+  const image = typeof captureBase64 === "string" ? await imageFromSource(captureBase64) : captureBase64;
+  const liveResults = await infer(async () => await faceapi
     .detectAllFaces(image, getDetectorOptions(faceapi))
     .withFaceLandmarks()
-    .withFaceDescriptors();
+    .withFaceDescriptors());
 
   if (liveResults.length !== 1) {
     return {
@@ -114,23 +122,23 @@ export async function recognizeFaceFromDataUrl(
       .filter((student) => student.status === "active")
       .map(async (student) => ({
         student,
-        descriptor: await descriptorForStudent(faceapi, student),
+        descriptor: await descriptorForStudent(student),
       })),
   );
 
-  const closest = candidates
+  const closest = chooseFaceMatch(candidates
     .filter((candidate): candidate is { student: Student; descriptor: Float32Array } => Boolean(candidate.descriptor))
     .map((candidate) => ({
       ...candidate,
-      distance: euclideanDistance(liveResult.descriptor, candidate.descriptor),
+      distance: descriptorDistance(liveResult.descriptor, candidate.descriptor),
     }))
-    .sort((first, second) => first.distance - second.distance)[0];
+  );
 
-  if (!closest || closest.distance > MATCH_THRESHOLD) {
+  if (!closest) {
     return {
       matched: false,
-      confidence: Math.max(0, Math.round((1 - Math.min(closest?.distance ?? 1, 1)) * 100)),
-      verificationNotes: "Face detected, but no enrolled student passed the match threshold.",
+      confidence: 0,
+      verificationNotes: "No unambiguous match. Center your face in good lighting or ask for manual check-in.",
     };
   }
 

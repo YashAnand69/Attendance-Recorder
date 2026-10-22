@@ -5,7 +5,7 @@ import type {
   ParentAlert,
 } from "../types";
 import { INITIAL_STUDENTS, DEFAULT_CLASSROOM } from "./mockData";
-import { recognizeFaceFromDataUrl } from "./faceRecognition";
+import { recognizeFaceFromDataUrl, clearFaceRecognitionCache } from "./faceRecognition";
 import { getLocalDateKey } from "./dateUtils";
 export type Workspace = {
   students: Student[];
@@ -165,6 +165,7 @@ export async function logout() {
   revision++;
   localStorage.removeItem("attendly_offline_until");
   authenticated = false;
+  clearFaceRecognitionCache();
   localStorage.removeItem("attendly_cloud_v4");
   state = read(cacheKey(), demoState());
   status = {
@@ -335,6 +336,8 @@ export async function deleteStudent(id: string) {
 export async function logAttendanceRecord(
   value: Omit<AttendanceRecord, "id" | "syncedOffline">,
 ) {
+  if (!state.students.some(student => student.id === value.studentId && student.status === "active"))
+    throw new Error("This student is no longer active in the roster. Refresh and try again.");
   const record: AttendanceRecord = {
     ...value,
     id: `att-${value.date}-${value.studentId}`,

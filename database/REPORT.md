@@ -3,7 +3,7 @@
 
 **Selected database technology:** Oracle Database with SQL and PL/SQL  
 **Application:** Smart classroom attendance recording using face verification, geofencing, offline synchronization, analytics, and parent alerts  
-**Repository:** \`YashAnand69/Attendance-Recorder\`
+**Repository:** `YashAnand69/Attendance-Recorder`
 
 ---
 
@@ -11,7 +11,7 @@
 
 Attendance Recorder, branded in the application as **Attendly**, is a smart classroom attendance application. The existing web application supports student enrollment, face-based attendance verification, classroom geofence validation, manual correction, offline queuing, attendance dashboards, reports, and parent absence notifications.
 
-This mini-project implements the application's data layer using a normalized **Oracle relational database**. SQL is used for schema definition, constraints, data manipulation, joins, aggregations, analytical views, and reporting. PL/SQL is used to move important business rules into the database through reusable procedures, functions, exception handling, an attendance package, and an audit trigger.
+This mini-project supplies a separate normalized **Oracle relational database** module. The deployed website uses private Vercel Blob JSON storage; it is not connected to Oracle. Oracle execution evidence must be captured on an Oracle instance. SQL is used for schema definition, constraints, data manipulation, joins, aggregations, analytical views, and reporting. PL/SQL is used to move important business rules into the database through reusable procedures, functions, exception handling, an attendance package, and an audit trigger.
 
 The implementation is designed to preserve the functional behavior already present in the application while demonstrating relational database concepts required for a database systems mini-project.
 
@@ -77,12 +77,12 @@ Stores the physical classroom and its geofence configuration.
 
 Key attributes:
 
-- \`classroom_id\` — primary key
-- \`classroom_name\`
-- \`latitude\`
-- \`longitude\`
-- \`radius_meters\`
-- \`teacher_name\`
+- `classroom_id` — primary key
+- `classroom_name`
+- `latitude`
+- `longitude`
+- `radius_meters`
+- `teacher_name`
 
 ### STUDENTS
 
@@ -90,10 +90,10 @@ Stores one row per enrolled student.
 
 Key attributes:
 
-- \`student_id\` — primary key
-- \`roll_number\` — unique
-- \`student_name\`
-- \`classroom_id\` — foreign key
+- `student_id` — primary key
+- `roll_number` — unique
+- `student_name`
+- `classroom_id` — foreign key
 - parent contact details
 - face image reference
 - active/inactive status
@@ -104,13 +104,13 @@ Represents a scheduled attendance event.
 
 Key attributes:
 
-- \`session_id\` — identity primary key
-- \`classroom_id\` — foreign key
-- \`session_date\`
-- \`start_time\`
-- \`end_time\`
-- \`topic\`
-- \`session_status\`
+- `session_id` — identity primary key
+- `classroom_id` — foreign key
+- `session_date`
+- `start_time`
+- `end_time`
+- `topic`
+- `session_status`
 
 A unique constraint on classroom and date protects the current one-session-per-classroom-per-day design.
 
@@ -120,21 +120,21 @@ Stores the result for one student in one session.
 
 Key attributes:
 
-- \`attendance_id\` — identity primary key
-- \`session_id\` — foreign key
-- \`student_id\` — foreign key
-- \`status\` — PRESENT / ABSENT / LATE
-- \`confidence\`
-- \`latitude\`, \`longitude\`
-- \`verification_method\`
+- `attendance_id` — identity primary key
+- `session_id` — foreign key
+- `student_id` — foreign key
+- `status` — PRESENT / ABSENT / LATE
+- `confidence`
+- `latitude`, `longitude`
+- `verification_method`
 - offline synchronization flag
 - notes
 
 The constraint:
 
-\`\`\`sql
+```sql
 UNIQUE (session_id, student_id)
-\`\`\`
+```
 
 guarantees that duplicate scans cannot create conflicting rows for a student in the same session.
 
@@ -152,7 +152,7 @@ Stores the database history of attendance INSERT, UPDATE, and DELETE operations.
 
 ## 6. ER Relationship Summary
 
-\`\`\`text
+```text
 CLASSROOMS 1 ───< STUDENTS
 CLASSROOMS 1 ───< CLASS_SESSIONS
 
@@ -161,8 +161,8 @@ STUDENTS 1 ───< ATTENDANCE >─── 1 CLASS_SESSIONS
 STUDENTS 1 ───< PARENT_ALERTS
 ATTENDANCE 1 ───< PARENT_ALERTS
 
-ATTENDANCE 1 ───< ATTENDANCE_AUDIT
-\`\`\`
+ATTENDANCE ··· logical reference ··· ATTENDANCE_AUDIT (no foreign key)
+```
 
 This model separates master data, event data, transaction data, and audit data.
 
@@ -178,7 +178,7 @@ Each column stores an atomic value. Attendance status, student name, roll number
 
 ### Second Normal Form
 
-Transaction attributes depend on their complete logical key. Student details are not stored repeatedly in the attendance table. They are referenced using \`student_id\`.
+Transaction attributes depend on their complete logical key. Student details are not stored repeatedly in the attendance table. They are referenced using `student_id`.
 
 ### Third Normal Form
 
@@ -205,15 +205,15 @@ The SQL implementation includes:
 
 Student status is restricted to:
 
-\`\`\`sql
+```sql
 CHECK (status IN ('ACTIVE', 'INACTIVE'))
-\`\`\`
+```
 
 Attendance status is restricted to:
 
-\`\`\`sql
+```sql
 CHECK (status IN ('PRESENT', 'ABSENT', 'LATE'))
-\`\`\`
+```
 
 Face confidence is restricted to the range 0–100.
 
@@ -225,23 +225,23 @@ Coordinates are also constrained to valid latitude/longitude ranges.
 
 The database contains a package named:
 
-\`\`\`text
+```text
 ATTENDANCE_PKG
-\`\`\`
+```
 
-### 9.1 \`distance_meters\`
+### 9.1 `distance_meters`
 
 Calculates physical distance between two GPS coordinates using the Haversine formula.
 
 Purpose: reproduce the application's classroom geofence check at the database layer.
 
-### 9.2 \`attendance_percentage\`
+### 9.2 `attendance_percentage`
 
 Calculates a student's attendance percentage for a configurable date range.
 
 PRESENT and LATE are counted as attended sessions.
 
-### 9.3 \`mark_attendance\`
+### 9.3 `mark_attendance`
 
 Central attendance procedure.
 
@@ -257,19 +257,19 @@ It validates:
 - confidence range,
 - geofence requirement for face-recognition attendance.
 
-It uses Oracle \`MERGE\` so repeated scans update the existing student/session record instead of creating duplicates.
+It uses Oracle `MERGE` so repeated scans update the existing student/session record instead of creating duplicates.
 
-### 9.4 \`mark_absentees\`
+### 9.4 `mark_absentees`
 
 Uses an INSERT...SELECT statement to automatically create ABSENT rows for active students who do not yet have attendance for a given session.
 
-### 9.5 \`generate_absence_alerts\`
+### 9.5 `generate_absence_alerts`
 
 Creates or updates parent-alert queue rows for absent students.
 
 ### 9.6 Attendance Audit Trigger
 
-The row-level trigger \`TRG_ATTENDANCE_AUDIT\` records:
+The row-level trigger `TRG_ATTENDANCE_AUDIT` records:
 
 - INSERT,
 - UPDATE,
@@ -316,7 +316,7 @@ Student, classroom, session, and attendance information is retrieved using JOINs
 
 ### UPDATE
 
-The PL/SQL \`mark_attendance\` procedure changes an existing attendance row through deterministic upsert behavior.
+The PL/SQL `mark_attendance` procedure changes an existing attendance row through deterministic upsert behavior.
 
 ### DELETE
 
@@ -331,13 +331,13 @@ The implementation demonstrates Oracle-specific or advanced relational features 
 - PL/SQL packages,
 - stored procedures,
 - stored functions,
-- \`RAISE_APPLICATION_ERROR\`,
+- `RAISE_APPLICATION_ERROR`,
 - exception handling,
-- \`MERGE\`,
+- `MERGE`,
 - row-level triggers,
 - identity columns,
 - views,
-- \`SYS_CONTEXT\`,
+- `SYS_CONTEXT`,
 - anonymous PL/SQL blocks,
 - SQL*Plus bind variables,
 - aggregate queries,
@@ -404,7 +404,7 @@ Attendance is structured, relational, and integrity-sensitive. A relational data
 | Flexible document schema | More rigid | Excellent |
 | Academic SQL/PLSQL demonstration | Excellent | Not suitable for PL/SQL coursework |
 
-The existing application uses Firebase effectively for offline-first browser synchronization. However, **Oracle is more suitable for this database mini-project** because the coursework explicitly requires SQL and PL/SQL and because attendance records benefit from normalized relationships, constraints, transactions, analytical SQL, stored program units, and auditability.
+The deployed application uses private Vercel Blob JSON storage with a browser-managed offline queue. Firebase code remains in the repository but is not the current workspace storage. However, **Oracle is more suitable for this database mini-project** because the coursework explicitly requires SQL and PL/SQL and because attendance records benefit from normalized relationships, constraints, transactions, analytical SQL, stored program units, and auditability.
 
 A practical production architecture could use the React front end with an API connected to Oracle while retaining a browser-side offline queue.
 
@@ -412,7 +412,7 @@ A practical production architecture could use the React front end with an API co
 
 ## 16. Testing Strategy
 
-The demonstration verifies the following test cases:
+Run the demonstration on Oracle to verify the following test cases (expected outcomes, not claimed execution results):
 
 | Test | Expected result |
 |---|---|
@@ -450,13 +450,13 @@ A production system should additionally implement:
 
 The recommended demonstration is:
 
-1. Run \`00_setup.sql\`.
+1. Run `00_setup.sql`.
 2. Show the six tables and two views.
 3. Show the eight-student sample roster.
-4. Run \`04_queries.sql\` and explain at least three reports.
-5. Run \`05_demo.sql\`.
+4. Run `04_queries.sql` and explain at least three reports.
+5. Run `05_demo.sql`.
 6. Highlight the PL/SQL package call that marks attendance.
-7. Show the duplicate-safe \`MERGE\`.
+7. Show the duplicate-safe `MERGE`.
 8. Show automatic absence creation.
 9. Show generated parent alerts.
 10. Show the expected geofence exception.
@@ -469,4 +469,4 @@ The recommended demonstration is:
 
 The Attendance Recorder database implementation converts the application's existing attendance model into a normalized Oracle relational design. SQL constraints preserve data quality, analytical queries support administrative reporting, and PL/SQL centralizes domain rules such as geofence validation, absence processing, alert generation, percentage calculation, and audit history.
 
-The resulting database is suitable for an academic SQL/PLSQL mini-project while remaining directly connected to the behavior and entities of the existing Attendly application.
+The resulting database is suitable for an academic SQL/PLSQL mini-project while modeling the behavior and entities of Attendly. Connecting this module to the website requires a separate Oracle API integration.

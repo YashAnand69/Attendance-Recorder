@@ -10,3 +10,9 @@ coverage/
 # Local Netlify folder
 .netlify
 .vercel
+
+# Separate local development records
+.attendly-local/
+
+# Locally rendered report deliverables
+output/

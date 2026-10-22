@@ -10,7 +10,7 @@ export default async (req: Request) => {
     return Response.json(
       {
         authenticated: authenticated(req),
-        configured: Boolean(env("ATTENDLY_PASSWORD_HASH")),
+        configured: Boolean(env("ATTENDLY_PASSWORD_HASH") && env("ATTENDLY_SESSION_SECRET")),
       },
       { headers },
     );
@@ -24,12 +24,14 @@ export default async (req: Request) => {
   }
   if (req.method !== "POST") return new Response(null, { status: 405 });
   const hash = env("ATTENDLY_PASSWORD_HASH");
-  if (!hash)
+  if (!hash || !env("ATTENDLY_SESSION_SECRET"))
     return Response.json(
       { error: "Administrator login has not been configured." },
       { status: 503, headers },
     );
-  const ip = req.headers.get("x-nf-client-connection-ip") || "unknown";
+  const ip = (process.env.VERCEL
+    ? req.headers.get("x-vercel-forwarded-for")?.split(",")[0].trim()
+    : req.headers.get("x-nf-client-connection-ip")) || "unknown";
   const entry = attempts.get(ip) || { count: 0, reset: Date.now() + 60000 };
   if (entry.reset < Date.now()) {
     entry.count = 0;

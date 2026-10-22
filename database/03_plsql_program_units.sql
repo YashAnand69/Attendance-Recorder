@@ -184,15 +184,15 @@ CREATE OR REPLACE PACKAGE BODY attendance_pkg AS
       RAISE_APPLICATION_ERROR(-20005, 'Attendance cannot be recorded for a cancelled session.');
     END IF;
 
-    IF v_status NOT IN ('PRESENT', 'ABSENT', 'LATE') THEN
+    IF v_status IS NULL OR v_status NOT IN ('PRESENT', 'ABSENT', 'LATE') THEN
       RAISE_APPLICATION_ERROR(-20006, 'Invalid attendance status.');
     END IF;
 
-    IF v_method NOT IN ('FACE_RECOGNITION', 'MANUAL', 'OFFLINE_SYNC') THEN
+    IF v_method IS NULL OR v_method NOT IN ('FACE_RECOGNITION', 'MANUAL', 'OFFLINE_SYNC') THEN
       RAISE_APPLICATION_ERROR(-20007, 'Invalid verification method.');
     END IF;
 
-    IF v_sync NOT IN ('Y', 'N') THEN
+    IF v_sync IS NULL OR v_sync NOT IN ('Y', 'N') THEN
       RAISE_APPLICATION_ERROR(-20008, 'synced_offline must be Y or N.');
     END IF;
 
@@ -256,11 +256,15 @@ CREATE OR REPLACE PACKAGE BODY attendance_pkg AS
     p_session_id IN NUMBER
   ) IS
     v_classroom_id class_sessions.classroom_id%TYPE;
+    v_session_status class_sessions.session_status%TYPE;
   BEGIN
-    SELECT classroom_id
-      INTO v_classroom_id
+    SELECT classroom_id, session_status
+      INTO v_classroom_id, v_session_status
       FROM class_sessions
      WHERE session_id = p_session_id;
+    IF v_session_status = 'CANCELLED' THEN
+      RAISE_APPLICATION_ERROR(-20005, 'Cannot mark absentees for a cancelled session.');
+    END IF;
 
     INSERT INTO attendance (
       session_id, student_id, recorded_at, status,

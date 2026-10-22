@@ -57,3 +57,11 @@ The deployed app stores persistent records in a site-scoped Netlify Blobs store 
 ## Privacy note
 
 Face descriptors are computed in the browser. Camera frames are not sent to Gemini by the default scanner flow. Enroll only people who have provided the appropriate consent for biometric attendance use, and configure storage retention and access for your institution's policy.
+
+## DBMS report figures
+
+`database/REPORT.md` describes the separate Oracle module. `database/06_report_capture.sql` captures real object, constraint, query and transaction evidence after setup in a disposable Oracle schema. The installer drops and recreates the academic tables.
+
+To render the complete source appendix and ER/EER diagrams, install Python `reportlab` and run `python3 scripts/generate-dbms-evidence.py`. The PDF is written under `output/dbms-report/`. Use Poppler to export its pages as PNGs. Source screenshots are not Oracle execution evidence.
+
+The local Express server uses the same protected session and API handlers as the hosted app, with a separate `.attendly-local` store. Configure server-only password hash and session secret in `.env` for local administrator access. Face matching stays in the browser. Use Node 22.12 or newer for development.

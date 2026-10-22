@@ -42,6 +42,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
+  const scanLock = useRef(false);
+  const mountedRef = useRef(false);
+  const currentRoster = useRef(students);
+  const currentClassroom = useRef(classroom);
+  currentRoster.current = students;
+  currentClassroom.current = classroom;
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -67,6 +75,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Start Camera Stream
   const startCamera = async () => {
+    const requestId = ++cameraRequestRef.current;
     try {
       setCameraError(null);
       if (!navigator?.mediaDevices?.getUserMedia) {
@@ -83,7 +92,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         audio: false,
       });
 
-      if (!videoRef.current) { stream.getTracks().forEach(track=>track.stop()); return; }
+      if (requestId !== cameraRequestRef.current || !videoRef.current) { stream.getTracks().forEach(track=>track.stop()); return; }
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
@@ -94,6 +105,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         setIsCameraActive(true);
       }
     } catch (err: any) {
+      if (requestId !== cameraRequestRef.current) return;
       console.error("Camera access error:", err);
       const isDenied = err.name === "NotAllowedError" || err.name === "PermissionDeniedError";
       setCameraError(
@@ -107,6 +119,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Stop Camera
   const stopCamera = () => {
+    cameraRequestRef.current++;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
     if (videoRef.current && videoRef.current.srcObject) {
       try {
         const stream = videoRef.current.srcObject as MediaStream;
@@ -120,8 +135,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     startCamera();
     return () => {
+      mountedRef.current = false;
       stopCamera();
     };
   }, []);
@@ -228,7 +245,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // High-speed frame capture with optimized downsampling
   const captureFrame = (): string | null => {
-    if (!videoRef.current || !canvasRef.current) return null;
+    if (!videoRef.current || !canvasRef.current || videoRef.current.readyState < 2) return null;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
@@ -236,8 +253,8 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       const vWidth = video.videoWidth || 640;
       const vHeight = video.videoHeight || 480;
 
-      // Scale to 380px wide for ~20KB payload & rapid network transfer
-      const targetWidth = 380;
+      // Preserve face detail while bounding work on high-resolution cameras.
+      const targetWidth = Math.min(vWidth, 640);
       const targetHeight = Math.round((vHeight / vWidth) * targetWidth);
 
       canvas.width = targetWidth;
@@ -258,11 +275,14 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const handleUploadTestFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 8 * 1024 * 1024) {
+        setScanResult({ matched: false, confidence: 0, verificationNotes: "Choose a JPEG, PNG or WebP photo smaller than 8 MB." });
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = async () => {
         if (typeof reader.result === "string") {
-          const compressed = await compressFrame(reader.result);
-          executeScan(compressed);
+          void executeScan(reader.result);
         }
       };
       reader.readAsDataURL(file);
@@ -271,9 +291,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
   // Execute Biometric Scan with custom base64 or webcam frame
   const executeScan = async (overrideFrame?: string) => {
-    if (isScanning) return;
-
-    let frameBase64 = overrideFrame || captureFrame();
+    if (scanLock.current || faceEngineState !== "ready") return;
+    scanLock.current = true;
+    setIsScanning(true);
+    try {
+      let frameBase64 = overrideFrame || captureFrame();
     if (!frameBase64) {
       setScanResult({
         matched: false,
@@ -291,12 +313,24 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     setIsScanning(true);
     setParentAlertStatus(null);
 
-    try {
-      // Step 1: Geolocation Check
-      const coords = overrideFrame ? {lat: classroom.latitude, lng: classroom.longitude} : await new Promise<{lat:number;lng:number}>((resolve,reject)=>{
+      // GPS and on-device recognition run together; only live captures may save attendance.
+      const recognition = runFacialScan(overrideFrame ? frameBase64 : canvasRef.current!, students);
+      const location = overrideFrame ? Promise.resolve({ lat: classroom.latitude, lng: classroom.longitude }) : new Promise<{lat:number;lng:number}>((resolve,reject)=>{
         if (!navigator.geolocation) { reject(new Error("Location is unavailable. Use an administrator manual check-in.")); return; }
-        navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lng:p.coords.longitude}),()=>reject(new Error("Location permission is required. Allow location and retry, or use manual attendance.")),{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+        navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lng:p.coords.longitude}),()=>reject(new Error("Location permission is required. Allow location and retry, or use manual attendance.")),{enableHighAccuracy:true,timeout:10000,maximumAge:15000});
       });
+      const [faceOutcome, locationOutcome] = await Promise.allSettled([recognition, location]);
+      if (faceOutcome.status === "rejected") throw faceOutcome.reason;
+      if (locationOutcome.status === "rejected") throw locationOutcome.reason;
+      const aiResult = faceOutcome.value;
+      const coords = locationOutcome.value;
+      if (!mountedRef.current) return;
+      if (overrideFrame) {
+        setLocationResult(null);
+        setScanResult({...aiResult,verificationNotes:"Photo test only — no attendance was saved. " + (aiResult.verificationNotes || "")});
+        return;
+      }
+      setUserCoords(coords);
       const currentLat=coords.lat;
       const currentLng=coords.lng;
 
@@ -325,28 +359,18 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         return;
       }
 
-      // Step 2: Facial Recognition Identification
-      const aiResult = await runFacialScan(frameBase64, students);
       setScanResult(aiResult);
-      if (overrideFrame) {
-        setScanResult({...aiResult,verificationNotes:"Photo test only — no attendance was saved. " + (aiResult.verificationNotes || "")});
-        setIsScanning(false);
-        return;
-      }
 
       // Step 3: Log Attendance
       if (aiResult.matched && aiResult.studentId) {
-        const matchedStudent = students.find((s) => s.id === aiResult.studentId) || {
-          id: aiResult.studentId,
-          name: aiResult.studentName || "Matched Student",
-          rollNumber: aiResult.rollNumber || "N/A",
-          className: classroom.name,
-          parentEmail: "parent@example.com",
-          parentPhone: "",
-          faceImageDataUrl: "",
-          status: "active" as const,
-          createdAt: new Date().toISOString(),
-        };
+        const matchedStudent = currentRoster.current.find(s => s.id === aiResult.studentId && s.status === "active");
+        const originalStudent = students.find(s => s.id === aiResult.studentId);
+        const room = currentClassroom.current;
+        if (!matchedStudent || matchedStudent.faceImageDataUrl !== originalStudent?.faceImageDataUrl ||
+            room.id !== classroom.id || room.latitude !== classroom.latitude ||
+            room.longitude !== classroom.longitude || room.radiusMeters !== classroom.radiusMeters) {
+          throw new Error("The roster or classroom changed during the scan. Please scan again.");
+        }
 
         // Check if student was checked in within last 3 minutes to avoid duplicate spam in continuous mode
         const lastSeen = cooldownStudentIds[matchedStudent.id];
@@ -359,21 +383,6 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           setIsScanning(false);
           return;
         }
-
-        // Trigger celebratory chime & micro-confetti
-        audioFeedback.playSuccessChime();
-        setFlashSuccess(true);
-        setTimeout(() => setFlashSuccess(false), 1200);
-
-        try {
-          confetti({
-            particleCount: 35,
-            spread: 55,
-            origin: { y: 0.7 },
-            colors: ["#10b981", "#18181b", "#3b82f6"],
-            disableForReducedMotion: true,
-          });
-        } catch (e) {}
 
         const todayStr = getLocalDateKey();
         const timeStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -392,6 +401,21 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           verificationMethod: "face_recognition",
           snapshotUrl: frameBase64,
         });
+
+        // Trigger celebratory chime & micro-confetti
+        audioFeedback.playSuccessChime();
+        setFlashSuccess(true);
+        setTimeout(() => setFlashSuccess(false), 1200);
+
+        try {
+          confetti({
+            particleCount: 35,
+            spread: 55,
+            origin: { y: 0.7 },
+            colors: ["#10b981", "#18181b", "#3b82f6"],
+            disableForReducedMotion: true,
+          });
+        } catch (e) {}
 
         setCooldownStudentIds((prev) => ({ ...prev, [matchedStudent.id]: now }));
         setLastLoggedStudent(matchedStudent);
@@ -417,22 +441,21 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         verificationNotes: errorMsg,
       });
     } finally {
-      setIsScanning(false);
+      scanLock.current = false;
+      if (mountedRef.current) setIsScanning(false);
     }
   };
 
-  // Continuous Kiosk Auto-Scan Loop
+  // Use the current roster and cooldown values without restarting the scheduler on every render.
+  const scanCallback = useRef(executeScan);
+  useEffect(() => { scanCallback.current = executeScan; });
   useEffect(() => {
-    if (!isContinuousMode || !isCameraActive) return;
-
+    if (!isContinuousMode || !isCameraActive || faceEngineState !== "ready") return;
     const interval = setInterval(() => {
-      if (!isScanning) {
-        executeScan();
-      }
-    }, 4500);
-
+      if (document.visibilityState === "visible" && !scanLock.current) void scanCallback.current();
+    }, 1200);
     return () => clearInterval(interval);
-  }, [isContinuousMode, isCameraActive, isScanning]);
+  }, [isContinuousMode, isCameraActive, faceEngineState]);
 
   const handleTriggerParentAlert = async () => {
     const targetStudent = students.find((s) => s.id === (selectedAbsentStudentId || students[0]?.id));
@@ -464,7 +487,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   };
 
   const distance = calculateDistance();
-  const isInsideGeofence = distance <= classroom.radiusMeters;
+  const isInsideGeofence = Boolean(userCoords) && distance <= classroom.radiusMeters;
 
   return (
     <div className="space-y-6">
@@ -538,7 +561,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
 
           <button
             onClick={() => executeScan()}
-            disabled={isScanning || !isCameraActive}
+            disabled={isScanning || !isCameraActive || faceEngineState !== "ready"}
             className="flex items-center space-x-1.5 px-4 py-2 bg-zinc-950 hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer ring-1 ring-zinc-800"
           >
             <Sparkles className={`w-3.5 h-3.5 text-emerald-400 ${isScanning ? "animate-spin" : ""}`} />
@@ -622,7 +645,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             <div className="absolute top-3 right-3 flex items-center space-x-1.5 px-3 py-1 bg-zinc-950/80 backdrop-blur-md border border-zinc-800 text-white rounded-lg text-[11px] font-medium shadow-xs">
               <MapPin className={`w-3.5 h-3.5 ${isInsideGeofence ? "text-emerald-400" : "text-amber-400"}`} />
               <span>
-                {distance}m ({isInsideGeofence ? "Geofence Verified" : "Outside Boundary"})
+                {userCoords ? `${distance}m (${isInsideGeofence ? "Geofence Verified" : "Outside Boundary"})` : "Location not verified"}
               </span>
             </div>
 
@@ -651,10 +674,10 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => executeScan()}
-                  disabled={isScanning || !isCameraActive}
+                  disabled={isScanning || !isCameraActive || faceEngineState !== "ready"}
                   className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  {isScanning ? "Processing..." : "Scan Now"}
+                  {isScanning ? "Processing..." : faceEngineState === "loading" ? "Preparing scanner…" : faceEngineState === "error" ? "Reload to retry scanner" : "Scan Now"}
                 </button>
               </div>
             </div>
@@ -692,7 +715,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 <button
                   key={student.id}
                   onClick={() => executeScan(student.faceImageDataUrl)}
-                  disabled={isScanning}
+                  disabled={isScanning || !student.faceImageDataUrl || faceEngineState !== "ready"}
                   className="flex items-center space-x-2 px-2.5 py-1.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
                   title={`Simulate scan for ${student.name}`}
                 >
