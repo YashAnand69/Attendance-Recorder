@@ -1,7 +1,12 @@
-server.ts
-database/
-tests/
-docs/
-.env*
+node_modules/
 dist/
+build/
+coverage/
+.git/
 .netlify/
+.attendly-local/
+output/
+.env*
+!.env.example
+*.log
+.DS_Store
